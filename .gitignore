@@ -1,0 +1,47 @@
+# ── 词典数据：3.3 GB，绝不进版本库 ──────────────────────────
+dicts/
+*.mdx
+*.mdd
+
+# ── Xcode 生成物（工程文件由 project.yml 生成，不入库）──────
+*.xcodeproj/
+App/Info.plist
+*.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+
+# ── Swift Package ────────────────────────────────────────
+.build/
+.swiftpm/
+Package.resolved
+
+# ── 构建产物 / 索引 ───────────────────────────────────────
+*.o
+*.a
+*.dSYM/
+*.ipa
+*.app
+Index.noindex/
+
+# ── 系统 ────────────────────────────────────────────────
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ── 本地脚手架 ───────────────────────────────────────────
+/scratch/
+*.local
+
+# ── 分发产物（make dmg）──────────────────────────────────
+/dist/
+
+# ── 个人工作笔记，不进公开仓库 ────────────────────────────
+/CLAUDE.md
+/docs/
+/files.zip

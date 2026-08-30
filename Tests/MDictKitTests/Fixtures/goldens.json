@@ -1,0 +1,137 @@
+{
+  "_note": "由 mdict 参考实现实测生成，用作 Swift 解析层的 golden test。字节数是 UTF-8 编码后的长度。",
+  "dictionaries": [
+    {
+      "id": "oaldpe",
+      "path": "dicts/oalecd_10_refined/oaldpe.mdx",
+      "encrypted": "2",
+      "engineVersion": "2.0",
+      "encoding": "UTF-8",
+      "keyCount": 463860,
+      "firstKey": "#",
+      "lastKey": "𬭶",
+      "records": [
+        {
+          "key": "abandon",
+          "index": 0,
+          "utf8ByteCount": 27071,
+          "sha256": "fca3414b79194afa2d82dc406d94c452bfe7895624ed2553b5620dddd1050b72",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "dictionary",
+          "index": 0,
+          "utf8ByteCount": 13200,
+          "sha256": "fc05b25f8d9075365fce9f3067a697400f3cd5b4f3d8d11fff5ec8f14fd8d662",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "#",
+          "index": 0,
+          "utf8ByteCount": 16,
+          "sha256": "bb4193f4697ced73e3ae71daf057836f41d826187410c84d3b6281efa3464e6f",
+          "isRedirect": true,
+          "redirectTarget": "number"
+        },
+        {
+          "key": "#metoo",
+          "index": 0,
+          "utf8ByteCount": 16,
+          "sha256": "693475984c8576297726e0a9c723266ecfec2fff352779645a250a17f5f0bdff",
+          "isRedirect": true,
+          "redirectTarget": "me-too"
+        },
+        {
+          "key": "上当",
+          "index": 0,
+          "utf8ByteCount": 5802,
+          "sha256": "db52fffbc84137806f01d6ce70dae9b09d712ddb59f653dd87f70635d3688151",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "上当",
+          "index": 1,
+          "utf8ByteCount": 4423,
+          "sha256": "746846db5c8686309c44f56db77d4dc09196d4083e7873e434a646337ccd16c5",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "run",
+          "index": 0,
+          "utf8ByteCount": 151578,
+          "sha256": "1cec37c7f3adcb19a2548ca8b9af224dfc7260458992052410ec5648fc2916a3",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "serendipity",
+          "index": 0,
+          "utf8ByteCount": 3004,
+          "sha256": "4c974e9abeccd1715811064e37872682925078fe25bf7d0f811d3ead17898aef",
+          "isRedirect": false,
+          "redirectTarget": null
+        }
+      ]
+    },
+    {
+      "id": "cecd2024",
+      "path": "dicts/cecd_2024/cecd2024.mdx",
+      "encrypted": "No",
+      "engineVersion": "2.0",
+      "encoding": "UTF-8",
+      "keyCount": 85867,
+      "firstKey": "0800 number",
+      "lastKey": "ω",
+      "records": [
+        {
+          "key": "dictionary",
+          "index": 0,
+          "utf8ByteCount": 5495,
+          "sha256": "a2a29f74c7f85df2e8165d555cc64457c9a89513fee743cc2b60d90799c7251a",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "abandon",
+          "index": 0,
+          "utf8ByteCount": 11047,
+          "sha256": "0dea94abb3b8aad4dfb937e0ee4723cd7a9f8ba3b9b961629bef0a29e6a2019e",
+          "isRedirect": false,
+          "redirectTarget": null
+        }
+      ]
+    },
+    {
+      "id": "oxfordadvanced",
+      "path": "dicts/Oxford Advanced/oxfordadvanced.mdx",
+      "encrypted": "2",
+      "engineVersion": "2.0",
+      "encoding": "UTF-8",
+      "keyCount": 109473,
+      "firstKey": "$100, £50, etc. a throw",
+      "lastKey": "… or so",
+      "records": [
+        {
+          "key": "abandon",
+          "index": 0,
+          "utf8ByteCount": 7568,
+          "sha256": "e4edd0ded9dc048a9112dbe730bab6f098a5661c6ae996518dab177e3d113fca",
+          "isRedirect": false,
+          "redirectTarget": null
+        },
+        {
+          "key": "dictionary",
+          "index": 0,
+          "utf8ByteCount": 2917,
+          "sha256": "ba7b65f57d31588d3e7e406236b91f68284b45a9d7bc484b5f315c57164443da",
+          "isRedirect": false,
+          "redirectTarget": null
+        }
+      ]
+    }
+  ]
+}

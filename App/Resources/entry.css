@@ -1,0 +1,305 @@
+/* ══════════════════════════════════════════════════════════════════════
+   词条正文样式表
+   完全替换词典自带的 oaldpe.css（64 KB）/ oxfordadvanced.css（16 KB）。
+
+   立场：正文的色相数 = 0。层级由字族、字重、字号、缩进、留白、发丝线承担；
+   颜色只剩两件工作——可点元素的下划线，和命中词的高亮底。
+
+   墨阶是**四级**（早先是三级）。三级不够用：词性、语域标签这类"元信息"和
+   中文例句挤在同一级上，看不出谁是内容谁是标注。
+
+   为什么不沿用词典自带的配色：那套用 16 个色相家族做语义编码，是纸书双栏
+   密排时的导航手段（红词头是为了在字墙里"找"）。App 里搜索已经把你精确送到
+   词条，"找"这个动作不存在。而且那 16 个色相搬到深色底上零个能过 AA 4.5:1。
+
+   尺寸一律 rem。壳层用 UIFontMetrics 把缩放系数写进 html{font-size}，
+   所以 1rem 在 Large 下是 17px，在 AX5 下是 53px —— 显示级字号必须 min() 封顶。
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --f-sans:  "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "PingFang SC", sans-serif;
+  --f-serif: "New York", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* 墨阶。iOS 原生系（2026-08-30 定稿，三方向里用户拍板的方向一）：
+     纯白底 + 纯黑主墨 + 中性灰阶，和系统 App 同一质感。
+     对比度对 --bg 实测（不是抄的），最低一级 4.72:1 也过 AA 4.5。 */
+  --bg:          #FFFFFF;
+  --ink-1:       #000000;   /* 21.00:1  词头 · 中文释义（正文主体）· 义群标题 */
+  --ink-2:       #48484D;   /*  9.09:1  英文例句 · 音标 */
+  --ink-3:       #68686D;   /*  5.54:1  中文例句 · 义项号 */
+  --ink-4:       #737378;   /*  4.72:1  词性 · 语域标签 · 语法码（元信息） */
+  --zh:          var(--ink-1);
+  --accent:      #0071E0;   /*  4.73:1  雪佛龙 · 展开开关。系统蓝原值 #007AFF
+                               在白底只有 4.0:1 不到 AA，压深一档，观感几乎无差 */
+  --mark-fill:   #FFF0B8;
+  --mark-rule:   #8A5A00;   /*  5.93:1  高亮的 2px 下边线，状态由它承载而非填充 */
+  --rule-hair:   #E5E5EA;
+  --rule-strong: #C7C7CC;
+  --tap:         rgba(0, 113, 224, .09);
+  --fav:         #E9A50A;   /* 收藏的星。系统黄 #FFCC00 在纯白上几乎看不见，压深一档 */
+
+}
+
+/* 深色：iOS 系统 App 同款——深色 systemBackground 就是纯黑（设置、邮件都是），
+   强调色用系统深色蓝 #0A84FF（比浅色的 #007AFF 提亮降饱和，深底专用变体）。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:          #000000;
+    --ink-1:       #FFFFFF;   /* 21.00:1 */
+    --ink-2:       #AEAEB4;   /*  9.51:1 */
+    --ink-3:       #8E8E93;   /*  6.44:1 */
+    --ink-4:       #7D7D83;   /*  5.13:1 */
+    --accent:      #0A84FF;   /*  5.76:1 */
+    --mark-fill:   #332908;
+    --mark-rule:   #CCA83A;   /*  9.23:1 */
+    --rule-hair:   #2C2C2E;
+    --rule-strong: #48484A;
+    --tap:         rgba(10, 132, 255, .16);
+    --fav:         #FFD60A;   /* 系统深色黄原值，深底上够亮 */
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #000000; --ink-1: #FFFFFF; --ink-2: #AEAEB4; --ink-3: #8E8E93; --ink-4: #7D7D83;
+  --accent: #0A84FF; --mark-fill: #332908; --mark-rule: #CCA83A;
+  --rule-hair: #2C2C2E; --rule-strong: #48484A; --tap: rgba(10, 132, 255, .16);
+  --fav: #FFD60A;
+}
+
+/* ── 版心 ───────────────────────────────────────────────────────────
+   WebView 铺满含安全区，上下两条玻璃的让位全靠这里的 padding —— 绝不缩小
+   WebView 的 frame，否则内容不从玻璃下方透出，peek-through 全废。
+
+   顶部用 env(safe-area-inset-top)：WebView 四边全越界，正文要自己给状态栏让位。
+   （能拿到这个值的前提是壳层包的是 VC 不是 View，见 EntryWebViewController。）
+   底部 120px 是搜索条那片玻璃 + 上下留白 + Home 指示条，量出来的——**这一头只能写死**：
+   底边越界之后 env(safe-area-inset-bottom) 是 0，指望不上它。 */
+html { -webkit-text-size-adjust: none; }
+body {
+  margin: 0;
+  padding: calc(env(safe-area-inset-top) + 10px) 16px 120px 16px;
+  background: var(--bg);
+  color: var(--ink-1);
+  font-family: var(--f-sans);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+  -webkit-tap-highlight-color: transparent;
+}
+body-content { display: block; }   /* 默认 inline，而它是整篇文档的根 */
+
+/* ── 我们自己生成的元素 ─────────────────────────────────────────────
+   下面这些类**不来自任何词典**，是渲染层拍平/改写时造出来的，所以放在这里
+   而不是某部词典的映射表里。 */
+
+/* 上提出来的词头。词典把词头在每个词性里各印一遍，渲染层只留最前面这一份。
+   结构是两行：hwline（词头 + 收藏星）、phonline（音标 + 更多读音开关）。 */
+.hw            { display: block; margin: 0 0 .12rem }
+.hwline        { display: flex; justify-content: space-between;
+                 align-items: flex-start; gap: .6rem }
+.hw h1         { display: block; margin: 0; min-width: 0; font-family: var(--f-serif);
+                 font-size: min(2rem, 40px); font-weight: 700; line-height: 1.12;
+                 letter-spacing: -.014em; color: var(--ink-1); }
+.hw .phonetics { display: inline }
+.phonline      { display: block; margin-top: .18rem }
+
+/* 收藏的星：词头行最右。空心时是元信息灰的线框（和喇叭、雪佛龙一路），
+   收藏后实心黄——正文唯一的第二色相，但它标的是**用户自己的状态**，
+   不是词典的语义色，不算破 ADR 0005 的「色相数 = 0」。
+   实心与否只看根元素的 faved 类，壳层拦下 fav:// 导航后切这个类。 */
+.fav           { flex: none; display: block; padding: .3rem 0 .3rem .5rem;
+                 /* 星的中心对齐词头的 x 高中心，不是墨迹盒中心。词头以小写为主
+                    （buffet / test），视觉重心在 x 高一带，比「升部顶到基线」的
+                    盒中心低 2px 上下——按盒中心对齐星就显得往上飘（实测星中心
+                    91.5pt、墨迹盒中心 91.2pt、x 高中心 ≈ 93.5pt）。 */
+                 margin-top: calc(.3rem + 2px); text-decoration: none; }
+.fav svg       { display: block; width: min(1.3rem, 26px); height: min(1.3rem, 26px);
+                 fill: none; stroke: var(--ink-4); stroke-width: 1.7;
+                 stroke-linejoin: round; }
+.fav:active svg     { opacity: .45 }
+html.faved .fav svg { fill: var(--fav); stroke: var(--fav) }
+/* 同名词头拼成一页时（「上当」有两条），星只出现在第一份词头上——
+   收藏收藏的是**这个词**，不是某一条记录。 */
+body-content ~ body-content .fav { display: none }
+
+/* 动词形式：从 unbox="verbforms" 折叠表格拍平成一行（第 8 版的形态）。
+   按值去重是必需的——实测 98% 的动词 past 与 pastpart 相同。 */
+.vforms   { font-size: min(.82rem, 17px); line-height: 1.5; color: var(--ink-2); margin-top: .41rem; }
+.vforms i { font-style: normal; color: var(--ink-3); margin: 0 .45em; }
+
+/* ── 中英混排 ─────────────────────────────────────────────────────
+   中文标点的两侧空隙靠 text-spacing-trim 收掉。挂在容器上，各部词典的
+   中文元素都能吃到，不必逐个类名列。 */
+body-content  { line-break: strict; text-spacing-trim: trim-start; }
+
+/* ── macOS（.mac 类，Mac 壳层经 rootClasses 挂上）────────────────────
+   Mac 的配色、字号、版心走渲染图方向一（docs/design/macos-ui-directions.html，
+   2026-08-30 用户拍板），**与 iOS 解耦**：上面的 :root 是 iOS 的（原生系
+   纯白纯黑 + 系统蓝），这里整套覆盖回渲染图的四级墨阶。iOS 改配色不碰这段，
+   反之亦然。
+
+   选择器用 :root.mac 不用 html.mac——深色基础块是 :root:not([data-theme…])
+   两个类级，html.mac 只有一个类级压不过它，覆盖会静默失效（和 CLAUDE.md
+   隐藏层特异性那条同一个坑）。
+
+   版式三件事：
+   - 基准 13px（渲染图的窗口基准；macOS 系统正文也是 13pt）。层级全是 rem，
+     改根字号整套等比缩。
+   - 词头 32px（渲染图值）。基准缩到 13px 后 2rem 只剩 26px，词头跟着缩就
+     压不住版面，单独定死。
+   - 640px 版心居中 + 渲染图的页边距。窗口能拉到 1000pt+，不封顶一行
+     几十个词没法读。 */
+:root.mac {
+  font-size: 13px;
+
+  --bg:          #FFFFFF;
+  --ink-1:       #101317;
+  --ink-2:       #3A424C;
+  --ink-3:       #5C6673;
+  --ink-4:       #6B7482;
+  --accent:      #1B4C8A;
+  --mark-fill:   #FFF0B8;
+  --mark-rule:   #8A5A00;
+  --rule-hair:   #E3E6EA;
+  --rule-strong: #B9C0C8;
+  --tap:         rgba(27, 76, 138, .09);
+  --fav:         #E9A50A;
+}
+@media (prefers-color-scheme: dark) {
+  :root.mac:not([data-theme="light"]) {
+    --bg:          #111214;
+    --ink-1:       #F4F6F8;
+    --ink-2:       #B8C0CA;
+    --ink-3:       #8E97A3;
+    --ink-4:       #7C8592;
+    --accent:      #7FB6F5;
+    --mark-fill:   #3D3213;
+    --mark-rule:   #D8B23C;
+    --rule-hair:   #2A2D31;
+    --rule-strong: #4A4F56;
+    --tap:         rgba(127, 182, 245, .13);
+    --fav:         #FFD60A;
+  }
+}
+:root.mac body {
+  max-width: 640px;
+  margin: 0 auto;
+  /* 左比右宽出 28px：那是义项号的悬挂沟（对齐定稿「一条墨线」，见下）。 */
+  padding: 26px 34px 48px 62px;
+  /* 渲染图页面开了 antialiased，macOS 默认平滑比它重——同一组色值，
+     不开这行整篇看起来深一档（用户对着截图看出来的）。iOS 没有这个差异。 */
+  -webkit-font-smoothing: antialiased;
+}
+:root.mac .hw h1 { font-size: 32px; }
+
+/* ── 音标跟在词头右边（2026-08-30 用户拍板：Mac 屏幕宽，不必下移一行）──
+   DOM 不动（hwline + phonline 是 iOS 的两行结构），CSS 拆开重排：
+   hwline 用 display: contents 化掉，h1、音标行、收藏星成为 .hw 的三个
+   flex 项——基线对齐，音标占中间的弹性列（长音标在自己列里折行，
+   不掉到词头底下），星 order 排到最右。 */
+:root.mac .hw { display: flex; align-items: baseline; column-gap: .9rem; }
+:root.mac .hwline { display: contents; }
+:root.mac .phonline { flex: 1; min-width: 0; margin-top: 0; }
+/* 星心对齐词头 x 高中心（iOS 的老规矩，mac 重新量）。align-self: center
+   不能用——音标列为了命中区有 29px 高，把 flex 行撑高，星跟着沉下去
+   （实测低 10.2px）。按基线挂再上提实测差值，量完偏差 0.05px。
+   -8.9px 是对着 32px 词头 + 16.9px 星量的，改任何一个都要重量。 */
+:root.mac .fav { order: 1; align-self: baseline; margin-top: 0;
+                 position: relative; top: -8.9px; }
+
+/* ── 词条正文对齐渲染图（以下全是对 oaldpe-map 的 mac 覆盖）──────────
+   渲染图方向一的词条区是手绘稿，用户拍板照它做。:root.mac 两个类级，
+   压得过 .oa10 的一个类级；iOS 端这些规则原样生效，不受影响。 */
+
+/* 词性节标题：小写斜体的元信息灰。iOS 把它做成大写加字距的节标题；
+   渲染图里它退到义项后面，只是个轻声的标注。 */
+:root.mac .pos {
+  font-size: 1rem; font-weight: 400; font-style: italic;
+  letter-spacing: 0; text-transform: none; color: var(--ink-4);
+  margin: 0 0 .45rem;
+}
+
+/* 第一节不画顶线：渲染图里音标行下面直接进正文。header.hw 和各节 div.oald
+   是 body-content 下的兄弟（实测 DOM，见 ADR 0011），相邻选择器选得中；
+   节与节之间的线保留。 */
+:root.mac .hw + .oald { border-top: none; margin-top: .9rem; padding-top: 0; }
+
+/* 例句：提到 ink-2，和中译（小一档 ink-3）拉开。**不用斜体**——照渲染图
+   做过一版斜体，用户看了实物否掉（2026-08-30），iOS 那段「例句不用斜体」
+   的论证在 Mac 上同样成立，两平台在这里不分叉。 */
+:root.mac .x  { color: var(--ink-2); font-size: 1rem; }
+:root.mac xt  { font-size: .92rem; }
+/* Mac 例句全素（2026-08-30 用户拍板）：搭配标注 .cl 的 600 半粗在 iOS 上
+   压得住（例句是 ink-3 + .88rem 的弱一档），Mac 把例句提到 ink-2 + 1rem 后
+   同样的 600 就和中文释义打架——knowledge 这类搭配密集的词条整段发黑。
+   全库普查过：例句内带样式的只有 .cl 这一处（gloss/ndv/ei 无规则纯继承），
+   压掉它例句就是纯文本。三个类级压 oaldpe-map 的 .oa10 .x .cl（特异性坑，
+   见 CLAUDE.md）；iOS 的半粗不动。 */
+:root.mac.oa10 .x .cl { font-weight: inherit; }
+
+/* 释义回到渲染图的比例：基准即正文号。13px 基准下 iOS 的 .88rem 缩到 11px
+   就太小了——mac 的层级靠墨阶拉开，不靠再缩字号。
+   中文释义半粗（渲染图 .zh 600）：它是每个义项的第一眼，和例句拉开层级。
+   deft 的字号必须三个类级（:root.mac.oa10）：hidden.css 的 .h14.h15 deft
+   也是两个类级且加载在后，:root.mac 和它打平会静默输掉——CLAUDE.md
+   特异性那条坑的镜像。 */
+:root.mac.oa10 deft { font-size: 1rem; font-weight: 600; }
+:root.mac .def { font-size: 1.05rem; }
+
+/* ── 对齐定稿：一条墨线（2026-08-30 用户在三方向里选定）────────────
+   正文只有一条文本轴：中文释义、例句、中译、展开文案全部落在版心左缘，
+   义项号和展开雪佛龙**悬挂**到左缘外的沟里（沟 = 号列 20px + 沟距 8px，
+   住在 body 左 padding 那 62px 里）。号右对齐贴轴。 */
+:root.mac li.sense { padding-left: 0; }
+:root.mac li.sense::before {
+  left: -28px; width: 20px; text-align: right;
+  font-size: 1rem; font-weight: 400;
+  /* 号的竖向光学位置，两轮实测收敛到**推一半**（2026-08-30）：
+     - 纯基线对齐：数字降部 0、汉字墨迹伸到基线下 1.30–1.44px（乐/停/车，
+       canvas 实测 600 13px PingFang），号浮高——用户看出来了。
+     - 全推 0.1em 到墨迹极值线：数字平底密实、汉字下探的是稀疏笔画尖，
+       眼睛读汉字的底在极值之上，号又显得沉——用户也看出来了。
+     取中 0.05em。和 iOS 收藏星对 x 高中心 +2px 是同一类光学修正。 */
+  top: .05em;
+}
+/* 展开开关：文案回到轴上，雪佛龙右对齐挂进沟里（右缘贴号列右缘）。 */
+:root.mac details.more summary { padding-left: 0; }
+:root.mac details.more summary::before { left: calc(-8px - .47rem); }
+/* 展开出来的义项（.overflow）带着收展动画的 overflow: clip——iOS 的号在
+   盒内的 gutter 里不受影响，mac 的号挂在盒外 28px，横向裁剪直接把号裁没
+   （用户报的：展开后序号消失）。动画只需要裁竖向，横向放开。 */
+:root.mac .li_sense.overflow > li.sense { overflow-x: visible; overflow-y: clip; }
+
+/* +3 开关：渲染图里是元信息灰 + 下划线，不用强调色。 */
+:root.mac .morephon { color: var(--ink-4); border-bottom: 1px solid var(--rule-strong); }
+
+/* ── 划词浮窗（mac + panel 两类同挂，LookupPanel 经 rootClasses 加）──────
+   预览稿 docs/design/macos-lookup-panel.html，2026-08-30 用户拍板甲档：
+   浮窗是主窗口的缩影——只缩词头、收版心，其余（墨阶、字阶、悬挂沟、
+   音标即发音）全部继承上面的 :root.mac。380px 定宽由面板定，body 放开封顶。
+   左衬 48 = 内衬 20 + 悬挂沟 28（沟的构成和主窗口同值，义项号照常挂进去）。 */
+/* 内衬按**光学**统一到右缘的 14（2026-08-30 用户看出四边不等，实测顶 18/底 30）：
+   顶写 6——词头行高在墨迹上方还垫着 8；底写 0——正文末块自带 ~18 尾距。
+   左衬 = 14 + 悬挂沟，沟宽**随义项位数自适应**（同日用户提的对称问题）：
+   个位数词条号列收到 8px（数字 advance 实测最宽 8.37，溢出 0.4px 无碍；
+   tabular-nums 把十个数字对齐到同一左缘），序号墨迹到左缘 ≈14，和星到
+   右缘对称；有两位数义项号时（根类 n2，壳层数 li_sense_before 挂上）
+   恢复 20px 号列——预留是给用得上的词条的，不再人人陪绑。
+   贴轴关系（号右缘距正文轴 8px）两档不变，ADR 0012 不破。 */
+:root.mac.panel body { max-width: none; margin: 0; padding: 6px 14px 0 30px; }
+:root.mac.panel li.sense::before { left: -16px; width: 8px;
+                                   font-variant-numeric: tabular-nums; }
+:root.mac.panel.n2 body { padding-left: 42px; }
+:root.mac.panel.n2 li.sense::before { left: -28px; width: 20px; }
+:root.mac.panel .hw h1 { font-size: 22px; }
+/* 音标回到词头**下面一行**（2026-08-31 用户拍板）：380px 版心装不下
+   「长词头 + 音标同列」——internationalization 会把音标列挤成竖条并顶出
+   右缘，星跟着溢出。把 :root.mac 的三项 flex 重排逐项还原成 iOS 的
+   hwline / phonline 两行结构；主窗口不动。 */
+:root.mac.panel .hw { display: block; }
+:root.mac.panel .hwline { display: flex; }
+:root.mac.panel .phonline { margin-top: .18rem; }
+/* 星回到 hwline 里（flex-start 轴），对 22px 词头的 x 高中心。
+   旧值 7.7px 是「星和音标同排一行」时量的，结构一换作废。1.8px 是
+   浏览器 380px 版实测收敛值（canvas 量 x 高 10.66、基线 25.5，
+   星心对齐 baseline − x/2，偏差 < 0.1px）；估算值 -1.5px 实测偏高 3.3。 */
+:root.mac.panel .fav { order: 0; align-self: flex-start;
+                       top: auto; margin-top: 1.8px; }

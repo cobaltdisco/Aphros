@@ -1,0 +1,67 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:0.95686,0.94510,0.91373,1.00000",
+          "srgb:0.77255,0.73725,0.67451,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.2132,
+            "y": 0.0904
+          },
+          "stop": {
+            "x": 0.7868,
+            "y": 0.9096
+          }
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Glyph",
+      "layers": [
+        {
+          "image-name": "1_Glyph.svg",
+          "name": "1_Glyph",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "linear-gradient": [
+                  "srgb:0.95686,0.94510,0.91373,1.00000",
+                  "srgb:0.77255,0.73725,0.67451,1.00000"
+                ]
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "specular": false,
+      "blur-material": 0.0,
+      "translucency": {
+        "enabled": false,
+        "value": 0.0
+      },
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

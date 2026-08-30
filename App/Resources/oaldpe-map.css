@@ -1,0 +1,416 @@
+/* ══════════════════════════════════════════════════════════════════════
+   OALDPE（牛津高阶第 10 版）标记映射。
+
+   entry.css 只放令牌、版心、和**我们自己生成的元素**；具体到哪个类是词头、
+   哪个是例句，各部词典各写一份，因为它们的 HTML 完全不同。第 8 版见
+   oxfordadvanced-map.css。
+
+   角色              第 10 版真实标记
+   词头              h1.headword                    （音节点在构建期去掉）
+   词性              span.pos
+   发音按钮          a.sound[href^="sound://"]      （渲染层把音标挪进它里面了）
+   音标              span.phon                      （BrE / NAmE 标签由它的 ::before 生成）
+   音标分组          div.phons_br / div.phons_n_am  （display:contents，只用来分英美）
+   动词形式          div.vforms                     （构建期从 unbox=verbforms 拍平）
+   义项              ol > div.li_sense > li.sense
+   义项号            div.li_sense_before
+   语法码            span.grammar                   [uncountable]
+   句型              span.cf                        abandon somebody
+   语域标签          span.labels
+   英文释义          span.def
+   中文释义          deft > chn.simple
+   例句表            ul.examples > li > div.exText
+   英文例句          span.x
+   例句中译          xt > chn.simple
+   义群标题          h2.shcut （+ shcut > chn.simple 中译）
+   交叉引用          a.Ref
+   话题标签          .topic_name
+   中文词头          .leon-zh-en > .headw
+   条目行            .leon-zh-en li > span.en-link > a + span.zh
+   查询词高亮        span.highlight
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* 繁体永远不显示。第 10 版每处中文都成对给 simple / traditional 两份。 */
+.oa10 chn.traditional { display: none }
+.oa10 chn.simple      { display: inline }
+
+/* ── 词头块 ───────────────────────────────────────────────────────── */
+.oa10 .entry     { display: block }
+.oa10 .headword  { display: inline; font-family: var(--f-serif); font-size: min(2rem, 40px);
+                   font-weight: 700; line-height: 1.12; letter-spacing: -.014em; color: var(--ink-1); }
+.oa10 .pos       { font-size: min(.74rem, 15px); font-weight: 700; letter-spacing: .08em;
+                   text-transform: uppercase; color: var(--ink-4); margin-left: .35rem; }
+/* 短语动词词条（`turn around`）：正文是若干 pv-g 块，每块自带一行 .pv 变体标题
+   （turn around | turn somebody/something around）。这行是英文但**不是释义**——
+   释义（.def）照常被 15 藏着——它标的是「somebody/something 放哪」，也是两个块
+   之间唯一的区分，性质等同词头下那行动词形式。默认样式下它和释义混在一起，
+   按元信息排：小一档、ink-2、块间拉开。
+   竖线在渲染层拆成了 <br>（stackPhrasalVariants），一行一个式子——纸书的省空间
+   记法在 402pt 上正好卡在换行边缘，断点会落在式子中间。 */
+.oa10 .pv-g              { display: block }
+.oa10 .pv-g + .pv-g      { margin-top: 1.3rem; border-top: 1px solid var(--rule-hair);
+                           padding-top: 1.18rem; }
+.oa10 .pv-g .webtop .pv  { display: block; font-size: min(.85rem, 18px); font-weight: 600;
+                           line-height: 1.5; color: var(--ink-2); margin-bottom: .35rem; }
+/* 式子和词头一模一样的（渲染层打了 pv-dup，实测 12% 的块）藏掉——大词头就在
+   页面顶上，原样再排一遍是零信息。多式子的不在此列，见 EntryRenderer。
+   选择器必须写满五层：上面那条显示规则是 (0,4,0)，写少一层就被它压过去，
+   「隐藏」静默失效——CLAUDE.md 硬约束说的就是这件事，这次是在映射表内部踩的。 */
+.oa10 .pv-g .webtop .pv.pv-dup { display: none }
+
+/* 习语做独立词条时（`take (a) hold`），根是 span.idm-g，词头是里面的 span.idm——
+   没有 h1.headword，渲染层的上提词头也不经过它。按词头排。 */
+.oa10 body-content > .idm-g          { display: block }
+/* 收藏的星（渲染层塞在 .idm 后面）要顶到行尾，词头行改成 flex。 */
+.oa10 body-content > .idm-g .top-container:first-of-type .webtop {
+                   display: flex; justify-content: space-between;
+                   align-items: flex-start; gap: .6rem; }
+.oa10 body-content > .idm-g .webtop .fav { margin-top: .1rem }
+.oa10 body-content > .idm-g .webtop .idm {
+                   display: block; font-family: var(--f-serif); font-size: min(1.6rem, 32px);
+                   font-weight: 700; line-height: 1.2; letter-spacing: -.01em; color: var(--ink-1);
+                   margin-bottom: .6rem; }
+
+/* ── 发音 ──────────────────────────────────────────────────────────
+   跟在词头右边的一行灰字，不是控件：
+
+       garage  英 /ˈɡærɑːʒ/  美 /ɡəˈrɑːʒ/
+
+   曾经是两颗胶囊 + 喇叭图标，然后是描边的分段控件，都撤了：正文的立场是版式
+   承担层级、颜色只标可点（ADR 0005），而一个占满宽度的描边框在词头正下方比它
+   承载的内容还响。现在整块是 --ink-4 的元信息，和词性标签同级。
+
+   代价说明白：这一块没有任何"这里能点"的信号了，得点过一次才知道音标能发音。
+   这是取舍，不是疏漏。 */
+.oa10 .phonetics {
+  display: inline;
+  /* 没有左缩进：音标自成一行（方案 A）之后，「词头 1em 音标」那条同行时代
+     的气口规则就废了——节内自己的音标（record 名/动读音不同那 4.66%）也
+     独立成行，带缩进反而像排版事故。 */
+  font-size: min(.85rem, 18px); line-height: 1.5;
+  color: var(--ink-4);
+}
+.oa10 .phons_br,
+.oa10 .phons_n_am,
+.oa10 .phons_we     { display: inline }     /* we = 世界英语（南非等），全库 141 处 */
+.oa10 .phons_n_am,
+.oa10 .phons_we     { margin-left: .4em }   /* 各地区分组之间的气口 */
+
+/* 行内元素上下加内边距**不改变行高**，但会把命中区域撑开——纯文字没有盒子，
+   靠这个把可点范围从 18px 拉到 30px 左右。 */
+.oa10 a.sound {
+  display: inline; padding: .34rem 0;
+  color: inherit; text-decoration: none;
+}
+.oa10 a.sound:active { color: var(--ink-2) }
+/* 同一个地区的多个读法之间只留一个气口，不加分隔符 */
+.oa10 .phonetics a.sound + a.sound { margin-left: .45em }
+
+/* 地区标签只标每个地区的第一段——同一行里重复「英」没有意义。
+
+   挂在 <a> 自己的 ::before 上，不挂在音标的：would / you / your / bros 这四个词的
+   第一个读法带 strong form，而限定语在 DOM 里排在音标**前面**，标签跟着音标走
+   就成了「strong form 英 /wʊd/」，读起来像是在限定「英」。 */
+.oa10 .phons_br  a.sound:first-of-type::before { content: "英" }
+.oa10 .phons_n_am a.sound:first-of-type::before { content: "美" }
+
+/* 词典自带的 <span class="sep">,</span> 在 <a> 外面、点不到，关掉。 */
+.oa10 .phonetics .sep { display: none }
+
+/* 限定语（strong form / weak form / before vowels…）是渲染层挪进段里的，
+   见 wrapPhoneticsInButton。和地区标签长一样，因为它们是同一件事：
+   这一段读法的限定条件。全库 148 个读法带限定语。
+   世界英语的地区名（span.phon_label，渲染层已译成「南非」等）同一形制——
+   它就是 phons_we 组的「英 / 美」，只是词典把它写成了元素而不是 ::before。 */
+.oa10 .phonetics a.sound:first-of-type::before,
+.oa10 a.sound .prefix,
+.oa10 a.sound .phon_label {
+  font-size: min(.72rem, 15px); font-weight: 700; letter-spacing: .04em;
+  vertical-align: .04em; margin-right: .38em;
+}
+
+/* 音标整条不断行。版心的 overflow-wrap: anywhere 是给中文正文用的，落到音标上会把
+   /əˈbændən/ 拦腰断成两行——实测 overflow-wrap: normal / word-break: keep-all /
+   line-break 都拦不住，因为 `/` 后面本来就是合法的断行点，只有 nowrap 管用。 */
+.oa10 .phon { font-style: normal; white-space: nowrap }
+
+/* ── 「更多读音」开关 ──────────────────────────────────────────────
+   默认每个地区只显示第一个读法。实测 95.33% 的词条正好「英 1 + 美 1」，剩下
+   4.66% 多出来的收进这个开关——为 4.66% 把所有词的词头行撑成两三行不划算。
+
+   开关是 <label> 包着一个隐藏 checkbox（见 EntryRenderer.moreReadingsToggle）。
+   正文里的脚本全禁（ADR 0009），label→checkbox 是浏览器原生行为，不要 JS。 */
+.oa10 .hw a.sound:not(:first-of-type)              { display: none }
+.oa10 .hw:has(.morephon input:checked) a.sound     { display: inline }
+
+.oa10 .morephon        { display: inline; margin-left: .5em; cursor: pointer;
+                         font-size: min(.72rem, 15px); font-weight: 700;
+                         letter-spacing: .04em; color: var(--accent); }
+.oa10 .morephon input  { position: absolute; width: 0; height: 0; opacity: 0 }
+.oa10 .morephon::after { content: "+" attr(data-n) }
+.oa10 .hw:has(.morephon input:checked) .morephon::after { content: "\2212" }   /* − */
+
+/* 06 变形（复数、比较级、最高级）渲染成 `lighter · lightest`，
+   和动词形式拍平出来的那一行完全一致的形态。
+   变形自己**也带一整套音标**（hippocampus 的复数 hippocampi 有两个读法 ×
+   英式美式 = 四颗按钮），跟词头的发音挤在一起看着像这个词有四个读音。
+   动词形式拍平时把每个形式的音标列整个剥掉了，这里同理。 */
+.oa10 .inflections       { margin-top: .41rem }
+.oa10 .inflections .phonetics { display: none }
+.oa10 .inflected_form    { font-size: min(.82rem, 17px); line-height: 1.5; color: var(--ink-2);
+                           font-style: normal; }
+.oa10 .inflected_form + .inflected_form::before
+                         { content: "·"; color: var(--ink-4); margin: 0 .45em }
+
+/* 动词形式：构建期拍平出来的，第 8 版的形态——音标下面一行平铺。 */
+.oa10 .vforms   { font-size: min(.82rem, 17px); line-height: 1.5; color: var(--ink-2); margin-top: .41rem; }
+.oa10 .vforms i { font-style: normal; color: var(--ink-3); margin: 0 .45em; }
+
+/* ── 义项 ─────────────────────────────────────────────────────────
+   义项号行内挂号，不占独立网格列——占列的话正文左边缘被推到 48px，
+   而右边只有 16px，一边重一边轻。 */
+/* 左侧留一条**栏沟**，宽度 1.3rem。里面只放结构性的东西：义项号、例句的发丝线。
+   正文（中文释义、英文例句、例句中译）一律从栏沟右边起——原来释义文字在 20.8px、
+   而它自己的例句在 12.4px，子内容排在父内容左边，层级是反的。
+   栏沟外沿贴着版心，和词头、词性、展开按钮同一条线。
+   没有义项号的单义词条不留栏沟（栏沟空着只是白占地方）。 */
+.oa10                    { --gutter: 1.3rem;
+                           /* 义项行的行高写成**长度**而不是倍数：绝对定位的义项号要和
+                              中文释义共用同一个行盒高度，基线才对得齐；写成倍数的话
+                              各自乘自己的字号，义项号会浮得像上标。
+                              数值 = 中文释义的字号 × 行高，改那边这里要跟着改。 */
+                           --sense-lh: calc(min(1.03rem, 22px) * 1.55); }
+.oa10 ol.sense_single    { --gutter: 0rem }
+
+.oa10 ol.senses_multiple,
+.oa10 ol.sense_single    { list-style: none; margin: 1.06rem 0 0; padding: 0 }
+.oa10 .li_sense          { display: block }
+.oa10 li.sense           { display: block; margin-bottom: 1.18rem; padding-left: var(--gutter);
+                           line-height: var(--sense-lh); }
+.oa10 .li_sense_before   { display: inline; font-size: min(.82rem, 17px); font-weight: 700;
+                           color: var(--ink-3); font-variant-numeric: tabular-nums;
+                           letter-spacing: .04em; margin-right: .3rem; }
+.oa10 .sense_single .li_sense_before { display: none }   /* 只有一个义项就别编号了 */
+.oa10 .sensetop          { display: inline }
+.oa10 .grammar           { font-size: min(.74rem, 15px); font-weight: 700; letter-spacing: .03em;
+                           color: var(--ink-4); }
+
+/* ── 中英文挤在同一个元素里的四处 ──────────────────────────────────
+   这几个元素的英文是**裸文本节点**，没有元素可以 display:none：
+
+     .labels      (British English also<labelx><chn>英式英语也作</chn></labelx>)
+     .use         (<span class="wrap">(</span>used especially…<uset><chn>尤用于否定句</chn></uset>)
+     .un          <span class="eb">Lighted</span> is also used…<unx><chn>过去式也用…</chn></unx>
+     .inflections (comparative <span class="inflected_form">lighter</span>, …)
+
+   既然英文释义（15）已经关掉，正文里就不该再冒出没有对照的英文。
+   办法只有一个：整块字号归零，再把承载中文/形式的子元素放出来，括号自己补。
+   **这是全项目仅有的 font-size:0**——CLAUDE.md 里那条「别拿它藏文本」说的是
+   藏元素，那种情况该用 display:none；裸文本节点没有别的办法。 */
+.oa10 .labels,
+.oa10 .use,
+.oa10 .un,
+.oa10 .inflections       { font-size: 0 }
+
+.oa10 .labels labelx,
+.oa10 .use uset          { font-size: min(.77rem, 16px); font-style: normal; color: var(--ink-4) }
+.oa10 .labels labelx::before,
+.oa10 .use uset::before  { content: "(" }
+.oa10 .labels labelx::after,
+.oa10 .use uset::after   { content: ") " }
+
+.oa10 .un                { display: block; margin: .41rem 0 0 }
+.oa10 .un unx            { font-size: min(.77rem, 16px); line-height: 1.55; color: var(--ink-3) }
+
+/* 义项限定语 .dis-g 是同一族的第五处，当初漏了——英文释义都藏了，它的英文
+   却露着，实拍「(of a photo, video, etc.照片、视频等) 包括相机…」，中英粘连
+   （抽样 1.9% 的词条）。结构比上面四处友好：英文在 .dtxt 元素里、中文在它的
+   dtxtx 子元素里、括号是现成的 .wrap 元素——归零 + 放出，括号自己回来。 */
+.oa10 .dis-g             { font-size: 0 }
+.oa10 .dis-g .wrap,
+.oa10 .dis-g dtxtx       { font-size: min(.77rem, 16px); font-style: normal; color: var(--ink-4) }
+.oa10 .cf                { font-size: min(.88rem, 19px); font-weight: 700; color: var(--ink-2) }
+.oa10 .def               { font-size: min(1.12rem, 24px); line-height: 1.45; color: var(--ink-1) }
+.oa10 deft               { display: block; font-size: min(.88rem, 19px); line-height: 1.6;
+                           letter-spacing: .01em; color: var(--zh); margin-top: .18rem; }
+
+/* 例句：左发丝线 + 缩进，把「块」的结构还回来。 */
+/* 例句和中文释义**同一列**，不再靠左边那道发丝线分组——
+   字号小一档、墨阶降一级、中译再小一档，层级已经够读，竖杠是多余的一道线。
+   例句**不用衬线**：它曾是印刷体斜体例句的替代品，但例句已经有位置、字号、墨阶三个
+   标记，第四个是冗余；而且英文 New York 贴着中文 PingFang，同一个例句的两半读起来像
+   两份东西——颜色已经按「一个整体」统一了（ink-3），字族跟着走。衬线只留给词头。
+   li.sense 自己有 padding-left: var(--gutter)，所以这里归零就正好落在正文列上。 */
+.oa10 ul.examples        { list-style: none; margin: .12rem 0 0; padding: 0 }
+.oa10 ul.examples > li   { margin-bottom: .59rem }
+.oa10 ul.examples > li:last-child { margin-bottom: 0 }
+.oa10 .exText            { display: block }
+.oa10 .exText .cf        { display: block; font-size: min(.74rem, 15px); font-weight: 700;
+                           letter-spacing: .03em; line-height: 1.4; color: var(--ink-4); }
+.oa10 .x                 { font-size: min(.88rem, 19px); line-height: 1.44; color: var(--ink-3); }
+/* 例句里的搭配（span.cl）：原版词典加粗标出「这句例句演示的搭配」，无样式时
+   信息就丢了（首例句可见率 2.0%）。半粗接回来——字重不违反「色相 = 0」
+   （ADR 0005），例句本身是 ink-3，半粗不会盖过中文释义。
+   （2026-08-24 拍板：font-weight 600。）只标例句里的，别处的 .cl 不接。 */
+.oa10 .x .cl             { font-weight: 600 }
+.oa10 xt                 { display: block; font-size: min(.77rem, 16px); line-height: 1.58;
+                           letter-spacing: .01em; color: var(--ink-3); margin-top: .1rem; }
+
+/* ── 义群标题：长词条唯一的扫读锚点（run 有 63 个义项、37 个义群）── */
+.oa10 .shcut-g           { display: block }
+.oa10 h2.shcut           { position: sticky; top: 0; background: var(--bg);
+                           font-size: min(.82rem, 17px); font-weight: 700; letter-spacing: .09em;
+                           text-transform: uppercase; line-height: 1.3; color: var(--ink-1);
+                           margin: 1.53rem 0 .53rem; padding-bottom: .35rem;
+                           border-bottom: 1.5px solid var(--rule-strong); }
+.oa10 h2.shcut shcut     { display: block; font-size: min(.77rem, 16px); font-weight: 400;
+                           letter-spacing: .01em; text-transform: none; color: var(--ink-3);
+                           margin-top: .12rem; }
+
+/* ── 词性分节 ────────────────────────────────────────────────────
+   词典原来的结构是每个词性各自重复一遍词头：light 有名词/形容词/动词/副词
+   四段，"light" 就出现四次。渲染层把词头和音标上提到最前面（header.hw），
+   各节自己的词头在这里关掉——**只是不显示，HTML 一个字节没删**。 */
+.oa10 .entry .headword   { display: none }
+/* 同形号（buffet¹ / buffet²，span.hm）在上提词头里**不显示**——这一页同时包含
+   两条同形词，词头只标「1」反而误导；词性分节已经把它们排开了。原样式下它
+   直接焊在词尾：实拍「buf·fet1」，40px 衬线连成一个词。数据不动，CSS 关掉。
+   （2026-08-24 拍板：摘掉，不做上标。） */
+.oa10 .hw .hm            { display: none }
+.oa10 .top-container,
+.oa10 .top-g,
+.oa10 .webtop            { display: block }
+
+/* 词性从「词头后面的小标签」升级成**节标题**。 */
+/* 分节横线上下的留白：**量的是文字墨迹，不是 margin**。行高的半行距、以及展开钮
+   44pt 触控高度里的空白，都会加进视觉间距里，只看 margin 会以为两条线一样宽。
+   实测原来词头那条线上方 30px、义项那条 39px，差了 9px，肉眼看得出来。
+   现在两条都是上 26 / 下 22——上面稍宽一点，让横线归属于它引出的那一节。 */
+.oa10 .oald              { display: block; border-top: 1px solid var(--rule-hair);
+                           margin-top: 1.29rem; padding-top: 1.24rem; }
+.oa10 .pos               { display: block; margin: 0 0 .3rem;
+                           font-size: min(.82rem, 17px); font-weight: 700; letter-spacing: .1em;
+                           text-transform: uppercase; color: var(--ink-1); }
+
+/* ── 义项折叠 ─────────────────────────────────────────────────────
+   每节默认只展开前两个义项，其余由渲染层打上 .overflow，在这里收起。
+   开关是原生 `<details>`，**不需要 JS**——正文里的脚本全被拦掉了。
+   它是 <ol> 的兄弟节点，靠 :has() 反查这一节的开合状态；
+   包进 <details> 里行不通，多出来的义项可能嵌在 span.shcut-g（义群）内部，
+   从中间切一刀会把标签套错。
+
+   收展带动效（用户定的）。方案是 grid 行高 0fr ↔ 1fr——这台 WebKit
+   （iOS 26.5）实测不支持 interpolate-size / calc-size()，height:auto
+   过渡走不通；0fr 这条路能走通靠两个前提：标准配置下 renum 把行内义项号
+   藏掉、绝对定位的 counter 号不参与布局，.li_sense 里唯一的布局孩子就是
+   li.sense，正好当那个被夹扁的 grid item，一个包装元素都不用加。
+   收起态不再 display:none 而是 0fr + visibility:hidden：计数器照常
+   累加（编号本来就该数上它们），辅助功能树里也是隐藏的。
+   child 的 margin-bottom 要一起过渡到 0，否则行高归零后每个隐藏义项
+   还剩 1.18rem 的空白。 */
+.oa10 .li_sense.overflow           { display: grid; grid-template-rows: 1fr }
+.oa10 .li_sense.overflow > li.sense { min-height: 0; overflow: clip }
+.oa10 .oald:not(:has(details.more[open])) .li_sense.overflow {
+  grid-template-rows: 0fr; visibility: hidden;
+}
+.oa10 .oald:not(:has(details.more[open])) .li_sense.overflow > li.sense {
+  margin-bottom: 0; opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .oa10 .li_sense.overflow            { transition: grid-template-rows .3s ease,
+                                                    visibility .3s }
+  .oa10 .li_sense.overflow > li.sense { transition: margin-bottom .3s ease,
+                                                    opacity .25s ease }
+  .oa10 details.more summary::before  { transition: transform .3s ease,
+                                                    margin-top .3s ease }
+  /* 大节（.big，隐藏义项 > 6，渲染层打的）**收起**不做行高动画：
+     视口上方十几屏内容同时缩高，中途文档比滚动位置还短，闪出一块白
+     （录屏逐帧实锤）。改成淡出 .15s，然后行高一次归零——只有一次重排。
+     transition 按目标状态取值，所以只写在收起态的选择器下，展开照旧全动画。 */
+  .oa10 .oald:has(details.big):not(:has(details.more[open])) .li_sense.overflow {
+    transition: grid-template-rows 0s .15s, visibility 0s .15s;
+  }
+  .oa10 .oald:has(details.big):not(:has(details.more[open])) .li_sense.overflow > li.sense {
+    transition: opacity .15s ease, margin-bottom 0s .15s;
+  }
+}
+
+details.more          { margin: .35rem 0 0 }
+/* 雪佛龙占栏沟、文案落在正文列——和「义项号 + 中文释义」是同一个关系。
+   原来是 flex + gap，文案落在 14.7px，结构列（0）和正文列（20.8）两边都不挨着。 */
+/* 触控区靠上下 padding 撑到 43pt（≈ iOS 最小触控高度），再用负 margin 抵掉 8px，
+   让它在版面上只占「一行文字 + 4px 余量」——和普通文字行一样。
+   不抵掉的话它自带 12.5px 的空白，下一条分节横线上方就比别处宽 9px。
+   抵 8 不抵 12：一行普通文字的行盒本来也比墨迹高出约 4px，要的是**一样**，不是 0。 */
+details.more summary  { position: relative; display: flex; align-items: center;
+                        padding-top: 12px; padding-bottom: 12px; margin: -8px 0;
+                        padding-left: var(--gutter);
+                        font-size: min(.8rem, 16px); font-weight: 700; letter-spacing: .05em;
+                        color: var(--accent); list-style: none; cursor: pointer; }
+details.more summary::-webkit-details-marker { display: none }
+/* 雪佛龙是个只画右边和下边的方块转 45°，所以**墨迹全在盒子中心的一侧**——
+   朝下时在下半边，朝上时在上半边。「盒子居中」因此并不等于「看着居中」，
+   要再往箭头的反方向推半个墨迹（.16rem，实测出来的）。
+   两态的推法大小相同、符号相反：原来这两个 margin-top 是分别手调的，
+   实测收起态的箭头比文案低 5.5px、展开态高 1.5px，两态之间差 7px。 */
+details.more summary::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: .47rem; height: .47rem;
+  margin-top: calc(-.31rem - .16rem);          /* 盒子居中 −.31rem，再往上推 */
+  border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent);
+  transform: rotate(45deg);
+}
+details.more[open] summary::before {
+  transform: rotate(-135deg);
+  margin-top: calc(-.31rem + .16rem);          /* 箭头朝上，往下推同样多 */
+}
+/* 条数从 data-n 读，CSS 不用知道具体数字 */
+details.more summary::after       { content: "展开其余 " attr(data-n) " 个义项" }
+details.more[open] summary::after { content: "收起" }
+details.more summary:active       { opacity: .5 }
+
+/* ── 交叉引用 / 话题 ─────────────────────────────────────────────── */
+.oa10 a.Ref              { font-size: min(.88rem, 19px); font-weight: 500; line-height: 1.4;
+                           color: var(--ink-1); border-bottom: 1.5px solid var(--accent);
+                           text-decoration: none; }
+.oa10 .topic_name        { font-size: min(.77rem, 16px); font-weight: 500; letter-spacing: .03em;
+                           color: var(--ink-2); border: 1px solid var(--rule-strong);
+                           border-radius: 3px; padding: .15em .41em; }
+
+/* ── 中文词头条目：占实体词条的 72%，本质是一张双语检索结果列表 ────
+   注意 span.zh 是 <a> 的**兄弟节点**（都在 span.en-link 里），不是子元素。 */
+.oa10 .leon-zh-en .headw { display: flex; justify-content: space-between;
+                           align-items: flex-start; gap: .6rem;
+                           font-size: min(1.71rem, 34px); font-weight: 600;
+                           line-height: 1.2; letter-spacing: .01em; color: var(--ink-1); }
+/* 星的基线补偿按各自词头的字号来（entry.css 里那份是对 2rem 的 h1 调的）。 */
+.oa10 .leon-zh-en .headw .fav { margin-top: .2rem }
+.oa10 .leon-zh-en ul     { list-style: none; margin: .71rem 0 0; padding: 0;
+                           border-top: 1px solid var(--rule-hair); }
+.oa10 .leon-zh-en > ul > li { display: block; padding: .65rem 0;
+                           border-bottom: 1px solid var(--rule-hair); position: relative; }
+.oa10 .en-link > a       { display: block; font-size: min(1rem, 21px);
+                           line-height: 1.38; color: var(--ink-1); text-decoration: none; }
+.oa10 .en-link > .zh     { display: block; font-size: min(.82rem, 17px); line-height: 1.55;
+                           letter-spacing: .01em; color: var(--zh); margin-top: .18rem; }
+/* 43 例句源词标：右侧那个小小的来源单词。默认隐藏，见 hidden.css。 */
+.oa10 .en-link > a[title]::after {
+  content: attr(title); float: right; margin-left: .6rem;
+  font-family: var(--f-sans); font-size: min(.74rem, 15px); font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3);
+}
+/* 内链已去掉（2026-08-30 用户拍板）：条目行不再可点，雪佛龙和按压反馈
+   跟着退场——不可点的东西不能长得像可点。行尾 padding 也不再给箭头留位。
+   <a> 标签还在数据里（预览抽取靠它的 href 取目标词），只是不再有链接样子。 */
+.oa10 a { color: inherit; text-decoration: none }
+
+/* 一个义项只留第一个例句。开关挂在根元素上，去掉 .ex1 全部回来。 */
+.oa10.ex1 ul.examples > li:not(:first-child) { display: none }
+
+/* 07 拼写变体：`(also Test match)`，纯英文、没有中文对照。 */
+.oa10 .variants          { display: inline; font-size: min(.82rem, 17px); color: var(--ink-4) }
+
+/* 查询词高亮（元素 44，保留项）。状态由 2px 下边线承载而非填充色——
+   填充色在深色底上对比度不够。 */
+.oa10 .highlight { background: var(--mark-fill); box-shadow: inset 0 -2px 0 var(--mark-rule);
+                   font-weight: 500; }

@@ -1,0 +1,100 @@
+/* ══════════════════════════════════════════════════════════════════════
+   可开关的隐藏层。全部是 display:none，**数据一个字节都没动**。
+   开关挂在根元素的 class 上，所以可以做成设置页里的一排 toggle 运行时切换，
+   不需要重新构建。删掉任意一行，对应元素立刻回来。
+   元素编号对应 docs/decisions/0006-词条元素取舍.md 里的总表。
+
+   选择器用的是**各部词典的真实类名**，所以第 8 版有些条目要单写一份，
+   放在 oxfordadvanced-map.css 末尾。
+   ══════════════════════════════════════════════════════════════════════ */
+
+.h4  .symbols, .h4 [class*="ksym_"]           { display: none }  /* 04 CEFR 等级 */
+.h5  .opal_symbol, .h5 [class*="opal"]        { display: none }  /* 05 OPAL 学术词标 */
+.h7  .variants                                { display: none }  /* 07 拼写变体 (also Test match) */
+.h12 .grammar                                 { display: none }  /* 12 语法码 [transitive] */
+/* 14 句型（义项级 + 例句级）。例句级那条要写满三层——映射表里是
+   `.oa10 .exText .cf`（0,3,0），只写 `.h14 .cf`（0,2,0）会被它压过去，
+   于是「隐藏」静默失效。同特异性时后加载的赢，隐藏层排在映射表之后。 */
+.h14 .cf, .h14 .exText .cf                    { display: none }
+.h15 .def                                     { display: none }  /* 15 英文释义 */
+/* 19 例句发音。两种形态：<example-audio> 里的 .ogg，和例句文本里紧跟着的
+   例句文本里紧跟着的 a.sound（.mp3，路径带 %23，属于 3.mdd 那批例句朗读）。
+   后者的第三个类名有 app / app-ext 两种，别按它匹配——按「在 span.x 里面」匹配，
+   词头那两个喇叭在 .phonetics 里，不受影响。 */
+.h19 example-audio, .h19 .x a.sound           { display: none }
+.h20 example-audio-ai                         { display: none }  /* 20 例句发音 · TTS */
+.h21 h2.shcut                                 { display: none }  /* 21 义群标题 */
+.h22 .xrefs, .h22 a.Ref, .h22 .xr-g, .h22 .xh { display: none }  /* 22 交叉引用 */
+.h23 .topic-g, .h23 .topic, .h23 .topic_name  { display: none }  /* 23 话题标签 */
+/* 24 习语。只藏主词条**里面**的习语区（div.idioms > span.idm-g）。
+   `.idm-g` 必须限定在 .entry 之内：习语本身也能是独立词条（`take (a) hold`），
+   它的根就是 span.idm-g、外面没有 .entry——写成 `.h24 .idm-g` 会把这类词条整条藏掉，
+   点开一张白纸。实测抽样 4,783 条里 89 条是这种（1.9%，全库约 8,600 条）。 */
+.h24 .idioms, .h24 .entry .idm-g              { display: none }
+/* 24 的连带：整节只有习语的词性节，习语一藏就成了空壳——「ADVERB」标题下
+   一行释义都没有（light 的副词、aback、run amok…全库抽样 36,368 条里 67 条，
+   约 0.18%，命中的深度 1 结构清一色是 [top-container, idioms]）。把整个 .oald
+   包装藏掉而不是只藏 .entry：词性节之间的发丝线画在 .oald 上，只藏 .entry
+   会留一条空白带 + 分隔线。特异性 (0,5,1) ≥ 映射表 .oa10 .oald 的 (0,2,0)。 */
+.h24 .oald:has(> .entry > .idioms):not(:has(> .entry > ol)) { display: none }
+/* 25 短语动词。只藏主词条里的**链接列表**（.phrasal_verb_links）。
+   `.pv-g` 不能出现在这里：实测抽样 11,314 条里它只存在于独立的短语动词词条
+   （`turn around`），主词条内嵌的是 0 条——写上它藏掉的全是独立词条的正文，
+   词头留着、释义空白，全库约 3,300 条。 */
+.h25 .phrasal_verb_links                      { display: none }
+.h26 .entry img, .h26 figure                  { display: none }  /* 26 插图 */
+.h27 ul.collocs_list                          { display: none }  /* 27 搭配表 */
+/* 30–37 全部折叠块。`details:not(.more)` —— .more 是渲染层生成的义项展开开关，
+   不是词典自带的折叠块，不能被这条一起关掉。 */
+.h30 div.collapse, .h30 .unbox,
+.h30 details:not(.more)                       { display: none }
+.h43 .en-link > a[title]::after               { content: none }  /* 43 例句源词标 */
+
+/* 29 同形异义分栏：它不是可隐藏的元素，是 abandon(动词) / abandon(名词) 两段
+   之间的**分隔**。真隐藏会丢掉半个词条，所以只去分隔线和留白。
+   **默认不再关它**——词性现在是词头下面一节一节排的，那条线就是节与节的边界。 */
+.h29 .oald { border-top: 0; margin-top: 0; padding-top: 0 }
+
+/* 02 音节分隔点没有对应的 CSS 开关 —— a·ban·don 里的圆点是词头的字面文本，
+   不是独立元素。它在渲染层去掉（EntryRenderer.removeSyllableDots）。 */
+
+/* ── 15 被隐藏时，中文释义接替成为正文主体 ── */
+.h15 deft         { font-size: min(1.06rem, 22px); line-height: 1.55; color: var(--ink-1);
+                    margin-top: 0; letter-spacing: .005em; }
+/* 例句中英文同色——它们是同一个例句的两半，分成两级读起来像两件东西。
+   颜色由映射表统一给（--ink-3），这里只调字号。 */
+.h15 .x           { font-size: min(.88rem, 19px) }
+.h15 xt           { font-size: min(.77rem, 16px) }
+.h15 li.sense     { margin-bottom: 1.06rem }
+
+/* ── 14 也隐藏后：义项行短到只剩「号 + 语域 + 中文释义」，排在同一行 ── */
+.h14.h15 deft             { display: inline; font-size: min(1.03rem, 22px) }
+.h14.h15 .li_sense_before { font-size: min(.82rem, 17px); color: var(--ink-3) }
+/* 释义**贴紧**它的例句，义项之间反而拉开——例句是这条释义的证据，不是下一段。
+   原来两个间距是 18.6px 和 23.2px（量的是文字实际边界，不是 margin），差不多一样
+   宽，例句读起来不知道跟着谁。现在是 11px 和 26px。 */
+.h14.h15 li.sense         { margin-bottom: 1.18rem }
+.h14.h15 ul.examples      { margin-top: .08rem }
+
+/* ── 义项号重编：run 从 1、8、12、17、21、28 变成 1–6 ──
+   原来用 font-size:0 藏原编号，被更高特异性的规则覆盖，于是原号和计数器叠成
+   48 / 512。display 是另一条属性，没有规则跟它竞争。
+   注意：重编后与牛津的原始编号对不上。目前交叉引用（22）已隐藏所以无碍，
+   哪天把 22 放回来，必须同时关掉重编。 */
+/* 计数器挂在**每个词性分栏**（div.oald）上，不是根元素——挂根上的话 abandon 的
+   名词部分会从 7 接着数下去。也不挂 ol：一个分栏里不止一个 ol（习语、短语动词
+   各自成 ol），挂 ol 会让义项号每隔几条就跳回 1。
+   习语和短语动词的 ol 是 display:none，按规范不参与计数，不用额外处理。 */
+.renum .oald              { counter-reset: sn }
+.renum li.sense           { counter-increment: sn }
+.renum .li_sense_before   { display: none }
+/* 义项号**绝对定位**在栏沟里，不参与行内排版。
+   用负边距把它拉出去也能对齐，但差 4.5px——义项号和释义之间隔着 HTML 里的
+   空白文本节点，行内流会把那个空格算进来，释义就比它自己的例句还右 4.5px。
+   绝对定位之后正文列精确落在栏沟外沿上。 */
+.renum li.sense           { position: relative }
+.renum li.sense::before   { content: counter(sn); position: absolute; left: 0; top: 0;
+                            width: var(--gutter);
+                            font-size: min(.82rem, 17px); font-weight: 700;
+                            color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.renum .sense_single li.sense::before { content: none }   /* 只有一个义项就别编号了 */

@@ -1,0 +1,140 @@
+# XcodeGen 规格。工程文件不入库，用 `make project` 或 `xcodegen generate` 生成。
+# 好处：改动全部体现在这份 YAML 的 diff 里，不会有 pbxproj 那种没法 review 的冲突。
+name: Dict
+options:
+  bundleIdPrefix: com.fx
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+  # 写进 LastUpgradeCheck。不设的话 XcodeGen 会填它自己内置的 1430（Xcode 14.3），
+  # 于是每次打开 Xcode 都提示 "Update to recommended settings"。
+  xcodeVersion: "26.6"
+
+packages:
+  DictEngine:
+    path: .
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+
+    # ── Xcode 26 的 "recommended settings" ──
+    # 这七项是拿 Xcode 26 新建工程模板的基线（Base_ProjectSettings.xctemplate 和
+    # App Base.xctemplate）跟本工程实际解析出来的设置逐项对出来的，不是抄的。
+    # 对法见 CLAUDE.md。工程文件由 project.yml 生成，所以不能在 Xcode 里点
+    # "Update"——点了下次 make project 就没了，必须写在这里。
+    CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+    GCC_C_LANGUAGE_STANDARD: gnu17
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY: YES
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+
+targets:
+  Dict:
+    type: application
+    platform: iOS
+    sources:
+      # Shared 是双端共用的壳层代码（store、音频、scheme handler、WebView 核心），
+      # iOS 是本平台专属的界面。macOS target 见下面的 DictMac。
+      - path: App/Shared
+      - path: App/iOS
+      - path: App/Resources
+        buildPhase: resources
+      # Icon Composer 的图标源（iOS 26 的 .icon，玻璃材质是系统运行时渲染的，
+      # 不是烘焙好的位图）。它是个目录包，**必须 type: file**——否则 XcodeGen
+      # 把它当文件夹展开，进工程的是里面的 svg 和 json，图标编译不到。
+      - path: App/AppIcon.icon
+        type: file
+        buildPhase: resources
+    # Info.plist 由这里生成（XcodeGen 写出 App/Info.plist，不入库）。
+    #
+    # 为什么不能全靠 INFOPLIST_KEY_*：那套只认 Xcode 白名单里的 95 个键，
+    # **UIFileSharingEnabled 不在其中**，写了被静默丢掉——不报错、不警告，
+    # 只是 Finder 和「文件」App 里永远看不到这个 App。实测踩过。
+    # LSSupportsOpeningDocumentsInPlace 在白名单里，所以只有它生效了。
+    info:
+      path: App/Info.plist
+      properties:
+        # 让 3.3 GB 词典能用 Finder /「文件」App 拖进 Documents，而不是打包进 App
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+
+    dependencies:
+      - package: DictEngine
+        product: MDictKit
+      - package: DictEngine
+        product: DictIndex
+      - package: DictEngine
+        product: DictRender
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES             # Info.plist 由下面的 INFOPLIST_KEY_* 生成
+        PRODUCT_BUNDLE_IDENTIFIER: com.fx.dict   # 一次定死，永不修改
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # 和 Mac 同一套做法：产品名即用户看到的名字（主屏幕、包名 Aphros.app）。
+        # 工程/target/bundle id 仍叫 Dict，见 CLAUDE.md。
+        PRODUCT_NAME: Aphros
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # 图标。名字要和 App/AppIcon.icon 的文件名对上。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        CODE_SIGN_STYLE: Automatic
+        # 签名团队。取自本机 Apple Development 证书的 **OU 字段**——
+        # 证书名 "Apple Development: Fanjia Xu (Q75P7SKB3M)" 括号里那串是证书自己的
+        # ID，**不是 Team ID**，填错会一直提示找不到匹配的描述文件。
+        # 核对：security cms -D -i <任一 .mobileprovision> | plutil -extract TeamIdentifier.0 raw -
+        DEVELOPMENT_TEAM: Z48W7TAXR4
+        TARGETED_DEVICE_FAMILY: "1"              # 只做 iPhone
+
+  # macOS 版（ADR 0011）：同一套 Shared + 引擎，壳层在 App/macOS。
+  # 不开沙盒（没有 entitlements 就是不开）——纯自用不上架，词典直接读
+  # ~/Documents/Dict，省掉书签授权那套仪式。
+  DictMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Shared
+      - path: App/macOS
+      - path: App/Resources
+        buildPhase: resources
+      - path: App/AppIcon.icon
+        type: file
+        buildPhase: resources
+    info:
+      path: App/InfoMac.plist
+      properties: {}
+    dependencies:
+      - package: DictEngine
+        product: MDictKit
+      - package: DictEngine
+        product: DictIndex
+      - package: DictEngine
+        product: DictRender
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        # 产品名 = 菜单栏和 Dock 显示的名字 = App 包名（Aphros.app）= 进程名
+        # （pkill/pgrep 用它）。target 名和工程名仍叫 Dict/DictMac。
+        PRODUCT_NAME: Aphros
+        # 和 iOS 版不同 id：真机 iOS App 和 Mac App 同机共存，同 id 会把
+        # LaunchServices 和签名的描述文件匹配一起搞糊涂。
+        PRODUCT_BUNDLE_IDENTIFIER: com.fx.dict.mac
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: Z48W7TAXR4

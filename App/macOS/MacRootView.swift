@@ -1,5 +1,5 @@
 import AppKit
-import DictRender
+import DictCore
 import SwiftUI
 
 /// Mac 主界面：双栏（ADR 0011 方向一，「书桌上的词典」）。
@@ -13,10 +13,8 @@ struct MacRootView: View {
     /// App 层持有传进来（见 DictMacApp）——取词浮窗共用同一份。
     let store: DictionaryStore
     let history: HistoryStore
-
-    /// 浮窗「在 Aphros 中打开」但主窗口已销毁时寄存的词：窗口重建是异步的，
-    /// .dictOpenWord 通知发出去没人收，改成新视图起来时自取（LookupPanel 写入）。
-    @MainActor static var pendingLookupWord: String?
+    /// 浮窗要主窗口打开的词从这里来（pendingWord，单通道，见 LookupRuntime）。
+    let runtime: LookupRuntime
 
     @State private var query = ""
     /// 候选缓存在状态里不做计算属性，理由同 iOS RootView：body 里访问几十次，
@@ -54,19 +52,11 @@ struct MacRootView: View {
             // ——那时边栏显示的是候选，历史怎么排看不见。
             open(word, record: !suggestions.isEmpty)
         }
-        // 划词浮窗的「在 Aphros 中打开」。record: false——浮窗查到时已经记过了。
-        .onReceive(NotificationCenter.default.publisher(for: .dictOpenWord)) { note in
-            guard let word = note.object as? String else { return }
-            query = word
-            open(word, record: false)
-        }
-        // 窗口重建路径的同一件事（词典就绪后才开得出词条，挂 phase 上等它）。
-        .onChange(of: isReady, initial: true) { _, ready in
-            guard ready, let word = Self.pendingLookupWord else { return }
-            Self.pendingLookupWord = nil
-            query = word
-            open(word, record: false)
-        }
+        // 浮窗的「在 Aphros 中打开」：盯 Runtime 的 pendingWord。窗口活着时
+        // 属性变化触发；窗口重建时 initial: true 在出现那一刻触发；词典还没
+        // 就绪就等 phase 翻到 ready 再取。
+        .onChange(of: runtime.pendingWord, initial: true) { _, _ in consumePendingWord() }
+        .onChange(of: isReady) { _, _ in consumePendingWord() }
         // 列表键控三件套：↑↓ 挪选中、⌫ 删记录（2026-08-30 用户拍板）。
         // 全走本地键码监视器不走 onKeyPress——后者只在搜索框聚焦时生效
         //（TextField 的 field editor 还会吞 ⌫），点过列表行焦点一丢键就哑。
@@ -97,6 +87,14 @@ struct MacRootView: View {
     private var isReady: Bool {
         if case .ready = store.phase { return true }
         return false
+    }
+
+    /// record: false——浮窗查到时已经记过了。
+    private func consumePendingWord() {
+        guard isReady, let word = runtime.pendingWord else { return }
+        runtime.pendingWord = nil
+        query = word
+        open(word, record: false)
     }
 
     // MARK: 边栏
@@ -351,7 +349,7 @@ struct MacRootView: View {
             Color.page.ignoresSafeArea()
             // WebView 词典一就绪就建、常驻不重挂（iOS 同一策略）：先装一个空文档，
             // 把 WebContent 进程和样式表都热好，第一个词免掉冷启动白屏。
-            MacEntryWebView(html: document ?? Self.emptyDocument,
+            MacEntryWebView(html: document ?? DictionaryStore.emptyDocument,
                             onPlaySound: { store.play(sound: $0) },
                             onToggleFavorite: {
                                 guard let word = openedWord else { return false }
@@ -361,9 +359,6 @@ struct MacRootView: View {
             if document == nil { welcome }
         }
     }
-
-    private static let emptyDocument = EntryRenderer.document(
-        preTransformedBody: "", extraRootClasses: DictionaryStore.rootClasses())
 
     /// 欢迎页（2026-08-30 用户拍板：不再摆统计仪表）。词头数和冷启动耗时
     /// 原本是 ADR 0008 检验索引缓存的表面——那份职责不丢：同样的数字启动时
@@ -440,12 +435,10 @@ struct MacRootView: View {
     /// 换个词只是再点一行（iOS 的第 5 点在双栏下天然成立）。
     @discardableResult
     private func open(_ word: String, record: Bool) -> Bool {
-        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        // 历史/收藏用词典规范词头作键（Full → full；专名的大写保留），
-        // 键入 "FULL" 和划词 "Full" 落到同一条记录。
-        let canonical = store.canonicalKey(for: trimmed) ?? trimmed
-        guard let rendered = store.document(for: canonical,
+        // 「文本 → 词」的策略（规范词头等）在 DictionaryStore.resolve(typed:)，
+        // 这里只要文档；记不记历史是界面的事，留在下面。
+        guard let canonical = store.resolve(typed: word),
+              let rendered = store.document(for: canonical,
                                             favorited: history.isFavorite(canonical))
         else { return false }
         document = rendered

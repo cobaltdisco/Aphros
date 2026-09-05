@@ -1,5 +1,5 @@
 import Combine
-import DictRender
+import DictCore
 import SwiftUI
 
 /// 主界面。三层一栈：
@@ -180,7 +180,6 @@ struct RootView: View {
                         }
                         .buttonStyle(.plain)
                         .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
                         .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 20 }
                         // 原设计分隔线只在行间：末行下面那条藏掉。
                         .listRowSeparator(entry.id == items.last?.id ? .hidden : .automatic,
@@ -314,7 +313,7 @@ struct RootView: View {
     /// 空文档也必须是**完整文档**（带 viewport-fit=cover 的 head），不能是 ""，
     /// 否则换真词条时 viewport 变了会重排一帧。
     private func entryLayer(width: CGFloat) -> some View {
-        EntryWebView(html: document ?? EntryRenderer.document(preTransformedBody: ""),
+        EntryWebView(html: document ?? DictionaryStore.emptyDocument,
                      onPlaySound: { store.play(sound: $0) },
                      onToggleFavorite: {
                          guard let word = openedWord else { return false }
@@ -438,8 +437,9 @@ struct RootView: View {
     /// 查询词或候选打开成词条。**不清 query 和 suggestions**——右滑回来要原样
     /// 接着上次的搜索（第 5 点）；点 ✕ 才是主动清（第 6 点，清完露出首页）。
     private func open(_ word: String) {
-        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
+        // 「文本 → 词」的策略在 DictionaryStore.resolve(typed:)（规范词头：
+        // Full 和 full 同一条记录——Mac 先改的，iOS 漏了一轮，2026-08-31 收编时补齐）。
+        guard let trimmed = store.resolve(typed: word),
               let rendered = store.document(for: trimmed,
                                             favorited: history.isFavorite(trimmed))
         else { return }

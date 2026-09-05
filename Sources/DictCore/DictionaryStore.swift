@@ -4,38 +4,46 @@ import Foundation
 import MDictKit
 import Observation
 
-/// 词典的加载与查询。界面只跟它打交道。
+/// 词典的加载与查询。**界面只跟它打交道**（门面）：视图不 import 引擎三层，
+/// 查词策略（resolve）、渲染（document）、发音（play）都从这里要。
 @MainActor @Observable
-final class DictionaryStore {
+public final class DictionaryStore {
 
-    enum Phase {
+    public enum Phase {
         case loading
         case missing(URL)
         case ready
         case failed(String)
     }
 
-    private(set) var phase: Phase = .loading
-    private(set) var title = "词典"
+    public private(set) var phase: Phase = .loading
+    public private(set) var title = "词典"
     /// 冷启动耗时：mdx 索引就绪（缓存命中是读文件，未中是解压 + 排序 + 写缓存）
     /// 和全部 mdd 的资源库就绪。**显示出来是有意的**——ADR 0008 拿这个数字
     /// 检验索引缓存有没有兑现。
-    private(set) var indexElapsed: Duration = .zero
-    private(set) var resourceElapsed: Duration = .zero
+    public private(set) var indexElapsed: Duration = .zero
+    public private(set) var resourceElapsed: Duration = .zero
     /// mdx 的索引这次是从缓存读的还是现场重建的（重建 = 首启或词典文件换了）。
-    private(set) var indexFromCache = false
+    public private(set) var indexFromCache = false
 
     private var table: KeyTable?
     private var resources = ResourceLibrary([])
     private let audio = AudioPlayer()
 
-    var keyCount: Int { table?.dictionary.keyCount ?? 0 }
-    var resourceCount: Int { resources.resourceCount }
+    public var keyCount: Int { table?.dictionary.keyCount ?? 0 }
+    public var resourceCount: Int { resources.resourceCount }
+
+    /// 词典根目录。默认是双端约定的落点（AppPaths）；测试注入仓库里的 dicts/。
+    private let dictionariesRoot: URL
+
+    public init(dictionariesRoot: URL = .dictionariesRoot) {
+        self.dictionariesRoot = dictionariesRoot
+    }
 
     // MARK: 加载
 
-    func load() async {
-        let documents = URL.dictionariesRoot
+    public func load() async {
+        let documents = dictionariesRoot
         #if os(macOS)
         // 目录先立起来，「没有词典」页才能指着一个真实存在的文件夹说「放这里」。
         try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
@@ -125,15 +133,15 @@ final class DictionaryStore {
 
     // MARK: 查询
 
-    struct Suggestion: Identifiable, Hashable {
-        let id: Int
-        let key: String
+    public struct Suggestion: Identifiable, Hashable {
+        public let id: Int
+        public let key: String
     }
 
     /// 搜索建议。**同名词头合并成一行**——`light bulb` 在 OALDPE 里有两条
     /// （一条重定向到 bulb，一条到 light-bulb），列两行一模一样的字给不了任何信息。
     /// 点开时 `document(for:)` 会把同名的全部拼进同一页，一条都不丢。
-    func suggestions(for query: String, limit: Int = 40) -> [Suggestion] {
+    public func suggestions(for query: String, limit: Int = 40) -> [Suggestion] {
         guard let table, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
         var seen = Set<String>()
         return table.suggestions(query, limit: limit * 2)
@@ -145,7 +153,7 @@ final class DictionaryStore {
 
     /// 查到的正文，已经变换 + 包成完整文档。同名词头有多条时全部拼在一页里。
     /// `favorited` 变成根元素上的 `faved` 类——词头行那颗星是实心还是空心。
-    func document(for query: String, favorited: Bool = false, panel: Bool = false) -> String? {
+    public func document(for query: String, favorited: Bool = false, panel: Bool = false) -> String? {
         let body: String
         if let cached = bodyCache[query] {
             body = cached
@@ -173,10 +181,16 @@ final class DictionaryStore {
         return EntryRenderer.document(preTransformedBody: body, extraRootClasses: classes)
     }
 
+    /// 空文档：WebView 预热用（词典一就绪就装上，把 WebContent 进程和样式表
+    /// 热好，第一个词免掉冷启动白屏）。放这里而不是让视图自己拼——视图
+    /// 不该 import 渲染层，「界面只跟 store 打交道」这条线要靠编译器守。
+    public nonisolated static let emptyDocument = EntryRenderer.document(
+        preTransformedBody: "", extraRootClasses: rootClasses())
+
     /// 文档外壳上的界面状态类。`mac` 是 macOS 版心开关（entry.css 末节）：
     /// 窗口没有安全区和底部玻璃条，行宽还得封顶，让位规则整套换掉。
     /// `panel` 是划词浮窗的窄版心（ADR 0011 预留的「加一个类即可」，2026-08-30 兑现）。
-    nonisolated static func rootClasses(favorited: Bool = false, panel: Bool = false) -> [String] {
+    public nonisolated static func rootClasses(favorited: Bool = false, panel: Bool = false) -> [String] {
         var classes = favorited ? ["faved"] : []
         #if os(macOS)
         classes.append("mac")
@@ -198,25 +212,51 @@ final class DictionaryStore {
     /// 抽不到的也缓存（存空串），免得每次滚过都白查一遍。
     private var previewCache: [String: String] = [:]
 
-    /// 查询对应的**词典规范词头**：Full → full、china → China。历史和收藏
-    /// 用它作键（2026-08-30 用户拍板：Full 和 full 不该是两条记录）——
-    /// 大小写以词典为准，比无脑小写多保住一层：专名（Monday / China / I）
-    /// 不会被压成小写。exact() 本来就大小写折叠，这里只是把折叠后命中的
-    /// 原样键拿出来当身份。
-    func canonicalKey(for query: String) -> String? {
+    // MARK: 查词策略
+
+    /// 「用户给的文本 → 该打开的词」这一步**只住在这里**（2026-08-31 收编）：
+    /// 之前浮窗和两个主窗口各写一版，Mac 加了规范词头 iOS 没跟上，Full/full
+    /// 在 iOS 上还裂成两条历史——策略散落的账。三个壳层拿到词后再各自要
+    /// 文档、各自决定记不记历史（那是界面的事，有意留在壳层）。
+    ///
+    /// 键入路径：原样查（只修空白），命中后换成规范词头。**不跟桥**——
+    /// 键入 gave 是明确要看 gave，桥上那句「past tense of give」就是答案。
+    public func resolve(typed query: String) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return canonicalKey(for: trimmed)
+    }
+
+    /// 划词路径：归一化候选逐试（标点/所有格/屈折短语，QueryNormalizer 有
+    /// 实测依据）→ 命中纯桥条目就跟着词典自己的 entry:// 箭头跳一步
+    ///（gave 的正文只有一句 past tense of give，浮窗要的是终点释义）→ 规范词头。
+    public func resolve(selection raw: String) -> String? {
+        for candidate in QueryNormalizer.candidates(for: raw) {
+            guard let table, let match = try? table.lookup(candidate).first else { continue }
+            let target = EntryRenderer.bridgeTarget(for: match.html) ?? candidate
+            if let word = canonicalKey(for: target) { return word }
+        }
+        return nil
+    }
+
+    /// 划中文本的**展示形**：剥掉首尾标点/弯引号后的原文（归一化链的第一个
+    /// 候选），查不到时浮窗拿它显示「没有找到 “xxx”」、喂给「在 Aphros 中打开」。
+    /// 纯标点/空白返回 nil。放这里是为了让壳层不必 import 引擎层。
+    public nonisolated static func displayForm(ofSelection raw: String) -> String? {
+        QueryNormalizer.candidates(for: raw).first
+    }
+
+    /// 查询对应的**词典规范词头**：Full → full。历史和收藏用它作键
+    ///（2026-08-30 用户拍板：Full 和 full 不该是两条记录）——大小写以词典
+    /// 为准而不是无脑小写：换一部保留专名大写的词典也不会把 Monday 毁成
+    /// monday（OALDPE 键表实测本来就全小写，效果一样）。exact() 本来就大小写
+    /// 折叠，这里只是把折叠后命中的原样键拿出来当身份。
+    private func canonicalKey(for query: String) -> String? {
         guard let table, let match = try? table.lookup(query).first else { return nil }
         return match.key
     }
 
-    /// 纯桥条目（gave → give，见 EntryRenderer.bridgeTarget）指向的词。
-    /// 划词浮窗用：查到桥就跟一跳，落在真词条上。主窗口不跟——
-    /// 用户键入 gave 是明确要看 gave，桥上那句「past tense of give」就是答案。
-    func bridgeTarget(for query: String) -> String? {
-        guard let table, let match = try? table.lookup(query).first else { return nil }
-        return EntryRenderer.bridgeTarget(for: match.html)
-    }
-
-    func preview(for key: String) -> String? {
+    public func preview(for key: String) -> String? {
         if let cached = previewCache[key] { return cached.isEmpty ? nil : cached }
         let preview = (try? table?.lookup(key).first)
             .flatMap { $0 }
@@ -230,7 +270,7 @@ final class DictionaryStore {
     /// 把能重建的全清掉：解压区块缓存（mdx + 各 mdd，上限 8 MB × 卷数）、
     /// 渲染缓存、预览缓存。索引不动——重建索引等于重启。
     /// `MDict.purgeCache()` 之前一直是死代码，没有任何调用方；挂到这儿才算闭环。
-    func didReceiveMemoryWarning() {
+    public func didReceiveMemoryWarning() {
         table?.dictionary.purgeCache()
         resources.purgeCaches()
         previewCache.removeAll()
@@ -242,7 +282,7 @@ final class DictionaryStore {
 
     /// 播 `sound://xxx.mp3` 指的那段音频。取不到就什么都不做——
     /// 取不到的喇叭在渲染时已经藏掉了，走到这里说明资源库还没建好。
-    func play(sound reference: String) {
+    public func play(sound reference: String) {
         guard let data = try? resources.data(for: reference), !data.isEmpty else { return }
         audio.play(data, reference: reference)
     }

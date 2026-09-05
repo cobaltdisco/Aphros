@@ -14,7 +14,7 @@ extension URL {
     /// - macOS：`~/Documents/Dict`。不能直接扫 `~/Documents`——那是用户的整个
     ///   文稿目录，递归扫一遍又慢又越界（还会把 TCC 授权弹窗的必要性扩大到
     ///   全部文稿）。
-    nonisolated static var dictionariesRoot: URL {
+    public nonisolated static var dictionariesRoot: URL {
         #if os(macOS)
         documentsDirectory.appending(path: "Dict")
         #else
@@ -26,7 +26,7 @@ extension URL {
     ///
     /// iOS 沙盒里它就是根；macOS 不开沙盒时 `~/Library/Application Support`
     /// 是所有 App 共用的，直接把 `history.json` 扔在顶层等于乱丢垃圾。
-    nonisolated static var dictSupportDirectory: URL {
+    public nonisolated static var dictSupportDirectory: URL {
         #if os(macOS)
         applicationSupportDirectory.appending(path: "Dict")
         #else

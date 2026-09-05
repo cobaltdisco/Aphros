@@ -1,12 +1,7 @@
 import AppKit
-import DictIndex
+import DictCore
 import SwiftUI
 import WebKit
-
-extension Notification.Name {
-    /// 浮窗底栏「在 Aphros 中打开」→ 主窗口（MacRootView 监听）。object 是词。
-    static let dictOpenWord = Notification.Name("dictOpenWord")
-}
 
 /// 划词浮窗（ADR 0011 预留的第二形态，2026-08-30 拍板落地）。
 ///
@@ -29,11 +24,10 @@ final class LookupPanelController {
     /// 给 1px 就全弹回来（跳到 ~18px）——二选一都不是 14，缺口在面板层补齐，
     /// 光学四边才能统一到 14（顶 14.1 / 右 14 / 底 2.4+12）。
     static let webBottomInset: CGFloat = 12
-    /// 屏幕取词开关的 UserDefaults 键（菜单栏 Toggle 和热键注册共用）。
-    static let enabledKey = "selectionLookupEnabled"
 
-    /// 主窗口已被关掉时重建它（MacRootBootstrap 注入 openWindow）。
-    var reopenMainWindow: (() -> Void)?
+    /// 底栏「在 Aphros 中打开」：把词交给 App 层（LookupRuntime.showMainWindow）。
+    /// 浮窗不知道主窗口的生死，也不该知道。
+    var openInMain: ((String) -> Void)?
 
     private let store: DictionaryStore
     private let history: HistoryStore
@@ -108,7 +102,7 @@ final class LookupPanelController {
                 // 第一个候选就是修剪后的原文（划词带进来的标点已剥掉），
                 // 拿它显示和喂给「在 Aphros 中打开」——主窗口的候选列表
                 // 对拼写差一点的词常能救回来。纯标点/空白的选区照旧收起。
-                guard let display = QueryNormalizer.candidates(for: capture.text).first
+                guard let display = DictionaryStore.displayForm(ofSelection: capture.text)
                 else {
                     hide()
                     return
@@ -121,23 +115,15 @@ final class LookupPanelController {
         }
     }
 
-    /// 归一化候选逐个查到第一个命中（QueryNormalizer 注释里有实测依据）；
-    /// 命中的是纯桥条目（gave 的正文只有一句 past tense of give）就跟着
-    /// 词典自己的 entry:// 箭头跳一步——浮窗要的是终点释义，不是路标。
+    /// 「划中的文本 → 词」的策略（归一化、跟桥、规范词头）全在
+    /// DictionaryStore.resolve(selection:)，这里只要文档、挂窄版心。
     private func lookup(_ raw: String) -> (word: String, document: String)? {
-        for candidate in QueryNormalizer.candidates(for: raw) {
-            guard store.document(for: candidate) != nil else { continue }
-            let target = store.bridgeTarget(for: candidate) ?? candidate
-            // 记录/收藏一律用词典规范词头：划中 "Full" 落成词典里的 full，
-            // 不和键入路径的 full 裂成两条历史。
-            let word = store.canonicalKey(for: target) ?? target
-            if let document = store.document(for: word,
-                                             favorited: history.isFavorite(word),
-                                             panel: true) {
-                return (word, document)
-            }
-        }
-        return nil
+        guard let word = store.resolve(selection: raw),
+              let document = store.document(for: word,
+                                            favorited: history.isFavorite(word),
+                                            panel: true)
+        else { return nil }
+        return (word, document)
     }
 
     // MARK: 量高 → 定位 → 露面
@@ -245,19 +231,7 @@ final class LookupPanelController {
     private func openInMainWindow() {
         let word = model.word
         hide()
-        // App 可能正收在菜单栏形态（关窗即 accessory，见 MacRootBootstrap）——
-        // 先把程序坞图标请回来再前置/重建窗口。
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
-        if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.canBecomeMain }) {
-            window.makeKeyAndOrderFront(nil)
-            NotificationCenter.default.post(name: .dictOpenWord, object: word)
-        } else {
-            // 窗口已销毁：重建是异步的，通知没人收——词先寄存，
-            // 新窗口的 MacRootView 起来时自取。
-            MacRootView.pendingLookupWord = word
-            reopenMainWindow?()
-        }
+        openInMain?(word)
     }
 }
 

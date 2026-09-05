@@ -11,28 +11,28 @@ import Observation
 /// 排序即数组顺序：最近打开的在前。重复查询把旧记录上移到顶、不新增
 /// （用户定的），收藏标志和预览跟着记录走。
 @MainActor @Observable
-final class HistoryStore {
+public final class HistoryStore {
 
-    struct Entry: Codable, Identifiable {
-        var word: String
+    public struct Entry: Codable, Identifiable {
+        public var word: String
         /// 第一条释义的中文（EntryRenderer.preview）。打开词条时抓一次存起来，
         /// 首页每行的小字不用回词典里现查。
-        var preview: String?
-        var favorite = false
-        var openedAt: Date
-        var id: String { word }
+        public var preview: String?
+        public var favorite = false
+        public var openedAt: Date
+        public var id: String { word }
     }
 
-    private(set) var entries: [Entry] = []
+    public private(set) var entries: [Entry] = []
 
-    var favorites: [Entry] { entries.filter(\.favorite) }
+    public var favorites: [Entry] { entries.filter(\.favorite) }
 
     private let fileURL: URL
 
     /// 默认落在 Application Support（macOS 是它的 Dict 子目录，见 AppPaths）——
     /// Documents 对这个 App 是词典文件的地盘（文件共享开着，用户会在「文件」里翻），
     /// 历史不该混在那里面。
-    init(fileURL: URL? = nil) {
+    public init(fileURL: URL? = nil) {
         let url = fileURL ?? URL.dictSupportDirectory.appending(path: "history.json")
         self.fileURL = url
         if let data = try? Data(contentsOf: url),
@@ -44,7 +44,7 @@ final class HistoryStore {
     // MARK: 变更
 
     /// 打开了一个词。已有记录上移到顶；预览有新值就更新（词典换了版本预览会变）。
-    func recordOpen(_ word: String, preview: String?) {
+    public func recordOpen(_ word: String, preview: String?) {
         var entry = entries.first { $0.word == word }
             ?? Entry(word: word, preview: preview, openedAt: .now)
         entry.openedAt = .now
@@ -57,7 +57,7 @@ final class HistoryStore {
     /// 翻转收藏，返回新状态（词条页拿它去切星的实心/空心）。
     /// 星只在词条页上，正常路径词一定已在历史里；万一不在就补一条。
     @discardableResult
-    func toggleFavorite(_ word: String, preview: String? = nil) -> Bool {
+    public func toggleFavorite(_ word: String, preview: String? = nil) -> Bool {
         if let i = entries.firstIndex(where: { $0.word == word }) {
             entries[i].favorite.toggle()
             save()
@@ -68,13 +68,13 @@ final class HistoryStore {
         return true
     }
 
-    func isFavorite(_ word: String) -> Bool {
+    public func isFavorite(_ word: String) -> Bool {
         entries.first { $0.word == word }?.favorite ?? false
     }
 
     /// 删除一条记录。删的是**记录本身**，收藏标志跟着记录走（「收藏 ⊆ 历史」，
     /// 见类注释）——在只看收藏的过滤下删，也是同一个语义。
-    func remove(_ word: String) {
+    public func remove(_ word: String) {
         entries.removeAll { $0.word == word }
         save()
     }

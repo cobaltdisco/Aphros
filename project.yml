@@ -44,7 +44,8 @@ targets:
     type: application
     platform: iOS
     sources:
-      # Shared 是双端共用的壳层代码（store、音频、scheme handler、WebView 核心），
+      # Shared 是双端共用、**沾 UI 框架**的壳层代码（WebView 核心、scheme handler、
+      # 颜色）；不沾 UI 的 store/音频/路径在 SPM 的 DictCore 里（可 swift test）。
       # iOS 是本平台专属的界面。macOS target 见下面的 DictMac。
       - path: App/Shared
       - path: App/iOS
@@ -70,6 +71,10 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
 
     dependencies:
+      # 壳层只 import DictCore（门面）；引擎三层列在这里是 DictCore 的传递依赖，
+      # 视图代码不许直接 import 它们（见 CLAUDE.md「模块边界」）。
+      - package: DictEngine
+        product: DictCore
       - package: DictEngine
         product: MDictKit
       - package: DictEngine
@@ -80,7 +85,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES             # Info.plist 由下面的 INFOPLIST_KEY_* 生成
         PRODUCT_BUNDLE_IDENTIFIER: com.fx.dict   # 一次定死，永不修改
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
         # 和 Mac 同一套做法：产品名即用户看到的名字（主屏幕、包名 Aphros.app）。
         # 工程/target/bundle id 仍叫 Dict，见 CLAUDE.md。
@@ -117,6 +122,10 @@ targets:
       path: App/InfoMac.plist
       properties: {}
     dependencies:
+      # 壳层只 import DictCore（门面）；引擎三层列在这里是 DictCore 的传递依赖，
+      # 视图代码不许直接 import 它们（见 CLAUDE.md「模块边界」）。
+      - package: DictEngine
+        product: DictCore
       - package: DictEngine
         product: MDictKit
       - package: DictEngine
@@ -132,7 +141,7 @@ targets:
         # 和 iOS 版不同 id：真机 iOS App 和 Mac App 同机共存，同 id 会把
         # LaunchServices 和签名的描述文件匹配一起搞糊涂。
         PRODUCT_BUNDLE_IDENTIFIER: com.fx.dict.mac
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES

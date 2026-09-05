@@ -42,12 +42,20 @@ final class LookupRuntime {
     private(set) var controller: LookupPanelController?
     private var hotKey: HotKey?
 
-    /// 主窗口该打开的词——浮窗「在 Aphros 中打开」写、MacRootView 读后清空。
+    /// 主窗口被请到前台时该呈现什么（2026-09-05 用户拍板，两个入口两种意图）：
+    /// 浮窗「在 Aphros 中打开」是想接着看那个词，保持窗口原状只换词；
+    /// 菜单栏「打开 Aphros」是重新开始，回欢迎页、历史列表回到最新一条。
+    enum Request: Equatable {
+        case word(String)
+        case welcome
+    }
+
+    /// 主窗口待处理的请求——入口写、MacRootView 读后清空。
     /// **跨窗口状态只走这一条通道**（2026-08-31 收编）：之前是「窗口活着走
     /// 通知、窗口已销毁走静态变量」两条，改一条忘一条。Runtime 全程存活且
     /// 可观察，主窗口用 onChange(initial: true) 盯它：活着时属性变化触发，
     /// 重建时出现那一刻触发，一条路覆盖两种生命周期。
-    var pendingWord: String?
+    var pendingRequest: Request?
     /// 主窗口已销毁时重建它（拿 openWindow 环境值的视图注入）。
     var reopenMainWindow: (() -> Void)?
 
@@ -69,23 +77,35 @@ final class LookupRuntime {
     func start(store: DictionaryStore, history: HistoryStore) {
         guard controller == nil else { return }
         let controller = LookupPanelController(store: store, history: history)
-        controller.openInMain = { [weak self] word in self?.showMainWindow(opening: word) }
+        controller.openInMain = { [weak self] word in self?.showMainWindow(.word(word)) }
         self.controller = controller
         syncHotKey()
         installCloseWatcher()
     }
 
     /// 把主窗口请到前台（程序坞图标回来、已开则前置、已销毁则重建），
-    /// 顺带捎一个要打开的词。菜单栏「打开」和浮窗「在 Aphros 中打开」
+    /// 顺带捎上它该呈现什么。菜单栏「打开」和浮窗「在 Aphros 中打开」
     /// 都走这里——两个入口一份实现。
-    func showMainWindow(opening word: String?) {
+    func showMainWindow(_ request: Request) {
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
-        if let word { pendingWord = word }
+        pendingRequest = request
         if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.canBecomeMain }) {
             window.makeKeyAndOrderFront(nil)
         } else {
             reopenMainWindow?()
+        }
+        // 不能用 NSApp.activate()：macOS 14 起激活是「协作式」，菜单栏 App
+        // 自己喊 activate() 系统不理，窗口出来了却压在别的 App 后面（2026-09-05
+        // 用户报）。小实验 App 逐个量过五种写法：activate() 同步 / 推迟一轮都
+        // 不行；activate(from:options:) 带 ignoringOtherApps 能到前台，这是
+        // 14 起给这种场景的正式接口（旧的 activate(ignoringOtherApps:) 也能，
+        // 但已弃用）。推迟一轮让策略切换先落地。
+        DispatchQueue.main.async {
+            if let front = NSWorkspace.shared.frontmostApplication {
+                NSRunningApplication.current.activate(from: front, options: [.activateIgnoringOtherApps])
+            } else {
+                NSApp.activate()
+            }
         }
     }
 
@@ -149,7 +169,7 @@ private struct MenuBarContent: View {
         Button("打开 Aphros") {
             // 菜单自己的 openWindow 一定是活的，先刷进 Runtime 再走同一份实现。
             runtime.reopenMainWindow = { openWindow(id: "main") }
-            runtime.showMainWindow(opening: nil)
+            runtime.showMainWindow(.welcome)
         }
         Toggle("屏幕取词（⌥D）", isOn: $runtime.enabled)
         Divider()

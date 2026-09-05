@@ -13,7 +13,7 @@ struct MacRootView: View {
     /// App 层持有传进来（见 DictMacApp）——取词浮窗共用同一份。
     let store: DictionaryStore
     let history: HistoryStore
-    /// 浮窗要主窗口打开的词从这里来（pendingWord，单通道，见 LookupRuntime）。
+    /// 浮窗 / 菜单栏对主窗口的请求从这里来（pendingRequest，单通道，见 LookupRuntime）。
     let runtime: LookupRuntime
 
     @State private var query = ""
@@ -29,6 +29,11 @@ struct MacRootView: View {
     @FocusState private var searchFocused: Bool
     /// 列表键控（↑↓⌫）的事件监视器，见 body 末尾的 onAppear。
     @State private var listKeyMonitor: Any?
+    /// 每回到一次欢迎页加一，边栏列表盯它滚回顶部（最新一条记录）。
+    @State private var welcomeResets = 0
+    /// 浮窗带词进来时要选中的词。搜索框一换内容 onChange 就把选中清掉
+    ///（打字时该这样），所以「进来即选中」得等那一步跑完再落，见 onChange(query)。
+    @State private var selectAfterQueryChange: String?
 
     var body: some View {
         NavigationSplitView {
@@ -43,7 +48,10 @@ struct MacRootView: View {
         .tint(.accent)
         .onChange(of: query) { _, new in
             suggestions = store.suggestions(for: new)
-            selection = nil
+            // 打字时清掉旧选中；浮窗带词进来时改成选中那个词（它一定在
+            // 候选里：规范词头前缀搜自己必中），随后 onChange(selection) 打开它。
+            selection = selectAfterQueryChange
+            selectAfterQueryChange = nil
         }
         .onChange(of: selection) { _, new in
             guard let word = new else { return }
@@ -52,11 +60,11 @@ struct MacRootView: View {
             // ——那时边栏显示的是候选，历史怎么排看不见。
             open(word, record: !suggestions.isEmpty)
         }
-        // 浮窗的「在 Aphros 中打开」：盯 Runtime 的 pendingWord。窗口活着时
-        // 属性变化触发；窗口重建时 initial: true 在出现那一刻触发；词典还没
-        // 就绪就等 phase 翻到 ready 再取。
-        .onChange(of: runtime.pendingWord, initial: true) { _, _ in consumePendingWord() }
-        .onChange(of: isReady) { _, _ in consumePendingWord() }
+        // 浮窗「在 Aphros 中打开」/ 菜单栏「打开 Aphros」：盯 Runtime 的
+        // pendingRequest。窗口活着时属性变化触发；窗口重建时 initial: true 在
+        // 出现那一刻触发；词典还没就绪就等 phase 翻到 ready 再取。
+        .onChange(of: runtime.pendingRequest, initial: true) { _, _ in consumePendingRequest() }
+        .onChange(of: isReady) { _, _ in consumePendingRequest() }
         // 列表键控三件套：↑↓ 挪选中、⌫ 删记录（2026-08-30 用户拍板）。
         // 全走本地键码监视器不走 onKeyPress——后者只在搜索框聚焦时生效
         //（TextField 的 field editor 还会吞 ⌫），点过列表行焦点一丢键就哑。
@@ -67,7 +75,11 @@ struct MacRootView: View {
             guard listKeyMonitor == nil else { return }
             listKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-                      let window = event.window, !(window is NSPanel)
+                      let window = event.window, !(window is NSPanel),
+                      // 输入法正在组字（拼音字母还在组字区、没进搜索框，
+                      // query 仍是空的）时三个键全部放行：⌫ 该删字母不是删
+                      // 记录，↑↓ 该翻候选（2026-09-05 用户报的 ⌫ 那半）。
+                      !((window.firstResponder as? NSTextView)?.hasMarkedText() ?? false)
                 else { return event }
                 let handled = switch event.keyCode {
                 case 125: move(1)
@@ -89,12 +101,35 @@ struct MacRootView: View {
         return false
     }
 
-    /// record: false——浮窗查到时已经记过了。
-    private func consumePendingWord() {
-        guard isReady, let word = runtime.pendingWord else { return }
-        runtime.pendingWord = nil
-        query = word
-        open(word, record: false)
+    private func consumePendingRequest() {
+        guard isReady, let request = runtime.pendingRequest else { return }
+        runtime.pendingRequest = nil
+        switch request {
+        case .word(let word):
+            // 进来即选中那个词（2026-09-05 用户报：边栏原本选着别的词时，
+            // 正文换了、高亮还停在旧词上）。走 selection → open 这条正路，
+            // 顺带滚动到它；浮窗已记过历史，这里再记一次只是同词置顶，无害。
+            if query == word {
+                selection = word        // 搜索框没变 onChange 不会跑，直接选
+            } else {
+                selectAfterQueryChange = word
+                query = word
+            }
+        case .welcome:
+            showWelcome()
+        }
+    }
+
+    /// 回到刚启动的样子：空搜索框、欢迎页、历史列表（不筛收藏）滚回最新一条。
+    /// 关窗只是隐藏不销毁，不主动清这些状态就还是关窗前那一刻。
+    private func showWelcome() {
+        query = ""
+        suggestions = []
+        selection = nil
+        document = nil
+        openedWord = nil
+        showFavoritesOnly = false
+        welcomeResets += 1
     }
 
     // MARK: 边栏
@@ -246,6 +281,9 @@ struct MacRootView: View {
                 }
                 .onChange(of: selection) { _, new in
                     if let new { proxy.scrollTo(new) }
+                }
+                .onChange(of: welcomeResets) { _, _ in
+                    if let first = items.first { proxy.scrollTo(first.word, anchor: .top) }
                 }
             }
         }

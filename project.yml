@@ -85,7 +85,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES             # Info.plist 由下面的 INFOPLIST_KEY_* 生成
         PRODUCT_BUNDLE_IDENTIFIER: com.fx.dict   # 一次定死，永不修改
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.2.4"
         CURRENT_PROJECT_VERSION: "1"
         # 和 Mac 同一套做法：产品名即用户看到的名字（主屏幕、包名 Aphros.app）。
         # 工程/target/bundle id 仍叫 Dict，见 CLAUDE.md。
@@ -141,7 +141,7 @@ targets:
         # 和 iOS 版不同 id：真机 iOS App 和 Mac App 同机共存，同 id 会把
         # LaunchServices 和签名的描述文件匹配一起搞糊涂。
         PRODUCT_BUNDLE_IDENTIFIER: com.fx.dict.mac
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.2.4"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES

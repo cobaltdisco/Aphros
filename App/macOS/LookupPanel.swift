@@ -5,8 +5,9 @@ import WebKit
 
 /// 划词浮窗（ADR 0011 预留的第二形态，2026-08-30 拍板落地）。
 ///
-/// 无边框 `NSPanel`：`.nonactivatingPanel`——弹出不抢焦点，用户在原 App 里
-/// 打字不断流。和主窗口共用同一份 store/history（App 层持有，词典不加载第二次），
+/// 无边框 `NSPanel`：`.nonactivatingPanel`——弹出不激活 App（菜单栏不变），
+/// 但**成为 key 窗口**接管键盘焦点（KeyPanel，2026-09-05）。
+/// 和主窗口共用同一份 store/history（App 层持有，词典不加载第二次），
 /// 词条渲染复用 EntryWebCore，窄版心走 rootClasses 的 `panel` 类。
 ///
 /// 尺寸与行为按预览稿（docs/design/macos-lookup-panel.html，用户拍板甲档去喇叭）：
@@ -36,6 +37,11 @@ final class LookupPanelController {
     private var mouseMonitor: Any?
     private var keyMonitor: Any?
     private var localMonitor: Any?
+    /// 最近一次**量到的词条高度**。和 model.height（面板当前高度）分开存：
+    /// 未命中提示也走 present，会把 model.height 踩成 84；「同一个词再触发」
+    /// 的近路复用的必须是这个，不然先查 app → 查个没有的 → 再查 app，
+    /// 浮窗就缩成一条（用户报的，截图实锤）。
+    private var measuredWebHeight: CGFloat?
     /// 这次弹出的锚点（AppKit 坐标）。量完高度定位用。
     private var anchor: Anchor = .mouse(.zero)
 
@@ -48,9 +54,9 @@ final class LookupPanelController {
         self.store = store
         self.history = history
 
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 200),
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: true)
+        panel = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 200),
+                         styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: true)
         panel.level = .floating
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -92,8 +98,9 @@ final class LookupPanelController {
                 if hit.document == model.html {
                     // 同一个词再触发：coordinator 对同文档去重、didFinish 不会
                     // 再来（第一版在这儿死锁成「关了就再也弹不出」），高度是
-                    // 现成的，直接摆位露面。
-                    present(height: model.height)
+                    // 现成的，直接摆位露面——用量到的词条高度，不是面板
+                    // 当前高度（可能刚被未命中提示踩成 84）。
+                    present(height: measuredWebHeight ?? model.height)
                 } else {
                     // 先装文档、藏着量高；didFinish 里定尺寸再露面，不闪半成品。
                     model.html = hit.document
@@ -133,8 +140,10 @@ final class LookupPanelController {
         webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] value, _ in
             guard let self else { return }
             let contentHeight = (value as? Double).map { CGFloat($0) } ?? Self.maxWebHeight
-            present(height: min(contentHeight, Self.maxWebHeight)
-                            + Self.webBottomInset + Self.footerHeight)
+            let height = min(contentHeight, Self.maxWebHeight)
+                         + Self.webBottomInset + Self.footerHeight
+            measuredWebHeight = height
+            present(height: height)
         }
     }
 
@@ -142,7 +151,11 @@ final class LookupPanelController {
         model.height = height
         panel.setContentSize(NSSize(width: Self.width, height: height))
         place(height: height)
+        // 弹出即接管键盘焦点（见 KeyPanel）：光标、选中色都由 WebKit 按 key
+        // 窗口的正常路径处理。orderFrontRegardless 负责 App 不活跃时也能露面，
+        // makeKey 负责焦点。esc / 点外面照旧收起，收起时焦点自动回原 App。
         if !panel.isVisible { panel.orderFrontRegardless() }
+        panel.makeKey()
         installMonitors()
     }
 
@@ -235,6 +248,16 @@ final class LookupPanelController {
     }
 }
 
+// MARK: - 面板
+
+/// 无边框窗口默认不能成为 key。浮窗弹出即成为 key（2026-09-05 用户拍板）：
+/// 实测非 key 窗口里 WebKit 不换光标、选中画灰，转发事件、自己设光标
+/// 都没用；而划词场景里词已选中、原 App 本来就不在打字，「不抢焦点」
+/// 在这个产品上不成立。.nonactivatingPanel 保证成为 key 也不激活 App。
+private final class KeyPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 // MARK: - 内容
 
 @MainActor @Observable
@@ -300,6 +323,7 @@ private struct LookupPanelView: View {
         HStack {
             Button("在 Aphros 中打开", action: onOpenInApp)
                 .buttonStyle(.plain)
+                .pointerStyle(.link)    // 和正文里的链接一样给手型（用户要的）
             Spacer()
             Text("esc 关闭")
         }

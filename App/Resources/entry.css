@@ -284,6 +284,14 @@ body-content  { line-break: strict; text-spacing-trim: trim-start; }
    右缘对称；有两位数义项号时（根类 n2，壳层数 li_sense_before 挂上）
    恢复 20px 号列——预留是给用得上的词条的，不再人人陪绑。
    贴轴关系（号右缘距正文轴 8px）两档不变，ADR 0012 不破。 */
+/* 选中色和主窗口一样。浮窗从不是 key 窗口，WebKit 会按「非活跃窗口」把选中
+   画成灰的（用户报的）；highlight 是系统的活跃选中色（selectedTextBackground），
+   显式写上就不再看窗口状态——主窗口的默认就是它，两边一色。 */
+:root.mac.panel ::selection { background: highlight; }
+/* 关掉键盘焦点环。浮窗弹出即成为 key 窗口（2026-09-05），网页视图随之成为
+   第一响应者，WebKit 会给「展开」这类可聚焦元素画系统蓝框（首次弹出时，
+   用户截图）。浮窗里没有键盘导航（只有 esc），这个环只是噪音；主窗口不动。 */
+:root.mac.panel :focus, :root.mac.panel :focus-visible { outline: none; }
 :root.mac.panel body { max-width: none; margin: 0; padding: 6px 14px 0 30px; }
 :root.mac.panel li.sense::before { left: -16px; width: 8px;
                                    font-variant-numeric: tabular-nums; }

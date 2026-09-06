@@ -161,7 +161,7 @@ public final class DictionaryStore {
             guard let table, let matches = try? table.lookup(query), !matches.isEmpty
             else { return nil }
             body = matches
-                .map { EntryRenderer.transform($0.html) }
+                .map { EntryRenderer.transform(graftingPhrasalVerbs(into: $0.html, table: table)) }
                 .map { resources.isEmpty ? $0 : EntryRenderer.markMissingAudio($0) { resources.contains($0) } }
                 .joined()
             bodyCache[query] = body
@@ -179,6 +179,16 @@ public final class DictionaryStore {
             classes.append("n2")
         }
         return EntryRenderer.document(preTransformedBody: body, extraRootClasses: classes)
+    }
+
+    /// 空壳主词条（regale：没有义项、只有一张被 25 号藏掉的短语动词链接表）
+    /// 把链接指向的 `regale with` 条目正文接进来——第 8 版对这批词就是这么排的，
+    /// 释义本来就在现用词典里，只是隔了一次点击。全库 41 个，见 PhrasalVerbGraft。
+    private func graftingPhrasalVerbs(into html: String, table: KeyTable) -> String {
+        let targets = EntryRenderer.phrasalVerbGrafts(for: html)
+        guard !targets.isEmpty else { return html }
+        let records = targets.compactMap { try? table.lookup($0).first?.html }
+        return EntryRenderer.graftPhrasalVerbs(html, phrasalVerbRecords: records)
     }
 
     /// 空文档：WebView 预热用（词典一就绪就装上，把 WebContent 进程和样式表

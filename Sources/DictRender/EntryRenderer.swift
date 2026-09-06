@@ -783,6 +783,10 @@ public enum EntryRenderer {
     /// 只解析一跳，跳转本身由调用方执行（要不要跳是壳层的策略）。
     public static func bridgeTarget(for record: String) -> String? {
         guard !record.hasPrefix("@@@LINK=") else { return nil }
+        // 空壳主词条（regale：无义项、只有短语动词链接表）不是桥——它的释义
+        // 由 graftPhrasalVerbs 接进来，浮窗停在 regale 上就能看到全部式子
+        //（fend 挂着两个短语动词，跟第一个链接会丢掉另一个）。
+        guard phrasalVerbGrafts(for: record).isEmpty else { return nil }
         guard !record.contains(#"class="def""#),
               !record.contains("<deft"),
               !record.contains(#"class="chn"#),
@@ -924,7 +928,7 @@ public enum EntryRenderer {
 
     /// 从 `openingAt` 处的开标签数到它自己的闭标签，返回闭标签之后的位置。
     /// 同名标签会嵌套（`<span class="unbox">` 里全是 `<span>`），必须计深度。
-    private static func endOfElement(in html: String, tag: String, openingAt start: String.Index) -> String.Index? {
+    static func endOfElement(in html: String, tag: String, openingAt start: String.Index) -> String.Index? {
         let open = "<\(tag)", close = "</\(tag)>"
         var depth = 0
         var cursor = start

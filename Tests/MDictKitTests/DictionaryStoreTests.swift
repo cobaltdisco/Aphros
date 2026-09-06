@@ -56,6 +56,24 @@ struct DictionaryStoreTests {
         #expect(!window.contains(" panel"))      // 主窗口不带浮窗类
     }
 
+    @Test(.enabled(if: hasDictionary, "本地没有 dicts/，跳过"))
+    func 空壳动词接进短语动词释义() async throws {
+        let store = try await loadedStore()
+        // regale 主词条没有义项，释义在 regale with 里（2026-09-06 用户报「没有释义」）
+        let regale = try #require(store.document(for: "regale"))
+        #expect(regale.contains("to entertain somebody with stories, jokes, etc."))
+        #expect(regale.contains("regale somebody with something"))
+        // fend 挂着两个短语动词，两块都要接进来
+        let fend = try #require(store.document(for: "fend"))
+        #expect(fend.contains("fend for yourself"))
+        #expect(fend.contains("to defend or protect yourself from something/somebody"))
+        // 空壳不是桥：浮窗停在 regale 上看接进来的正文，不跳走
+        #expect(store.resolve(selection: "regale") == "regale")
+        // 有义项的词条链接表照旧不接：run 的正文里不该多出 pv-g 块
+        let run = try #require(store.document(for: "run"))
+        #expect(!run.contains(#"class="pv-g""#))
+    }
+
     @Test func 空文档可用() {
         #expect(DictionaryStore.emptyDocument.contains("<html"))
         #expect(DictionaryStore.emptyDocument.contains("entry.css"))

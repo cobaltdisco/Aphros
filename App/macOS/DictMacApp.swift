@@ -4,31 +4,62 @@ import SwiftUI
 
 @main
 struct DictMacApp: App {
-    /// Store 建在 App 层而不是视图里（iOS 是 RootView 自持）——划词浮窗
-    /// （ADR 0011 预留、0013 落地）是第二个窗口（无边框面板），必须和主窗口
-    /// 共用同一份索引、历史和音频——索引常驻内存、源文件 3.3 GB，
-    /// 词典不允许被加载两次。
-    @State private var store = DictionaryStore()
-    @State private var history = HistoryStore()
-    /// 热键和浮窗也在 App 层。**不能挂在窗口视图的 @State 上**：关窗即销毁
-    /// 视图状态，热键跟着注销，菜单栏形态下划词就死了（第一版真踩了）。
-    @State private var runtime = LookupRuntime()
+    /// store / history / runtime 都由 AppDelegate 持有、在 didFinishLaunching 里
+    /// 启动，**不挂在主窗口上**：开机自启（2026-09-15）是静默进菜单栏、主窗口
+    /// 根本不出现，挂在窗口 task 里的「加载词典 + 建浮窗 + 注册热键」就都不会
+    /// 发生——菜单栏形态下划词又死一次（ADR 0013 那个坑的另一种走法）。
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         // Window 不是 WindowGroup：主窗口是单例。WindowGroup 的 openWindow
         // 每次都**新开一个**（菜单栏「打开 Aphros」连点连开，用户报的），
         // Window 的语义是已开则前置；⌘N 这个多余入口也一并消失。
         Window("Aphros", id: "main") {
-            MacRootBootstrap(store: store, history: history, runtime: runtime)
+            MacRootBootstrap(store: delegate.store, history: delegate.history, runtime: delegate.runtime)
         }
         .defaultSize(width: 920, height: 640)
 
-        // 菜单栏常驻（2026-08-30 用户拍板）：打开 / 屏幕取词开关 / 退出。
+        // 菜单栏常驻（2026-08-30 用户拍板）：打开 / 屏幕取词开关 / 开机自启 / 退出。
         // 主窗口关掉后 App 收进这里继续活着（程序坞里不见），热键照常全局有效。
         // 图标：放大镜找「字」（两批候选里用户选的，docs/design/macos-menubar-icons*.html）
         MenuBarExtra("Aphros", systemImage: "character.magnify") {
-            MenuBarContent(runtime: runtime)
+            MenuBarContent(runtime: delegate.runtime, loginItem: delegate.loginItem)
         }
+    }
+}
+
+/// App 级对象的主人 + 启动序列。
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// 划词浮窗（ADR 0011 预留、0013 落地）是第二个窗口，必须和主窗口共用同一份
+    /// 索引、历史和音频——索引常驻内存、源文件 3.3 GB，词典不允许被加载两次。
+    let store = DictionaryStore()
+    let history = HistoryStore()
+    let runtime = LookupRuntime()
+    let loginItem = LoginItem()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // 登录项拉起的就静默进菜单栏（2026-09-15 用户拍板），不进程序坞、不弹主窗口。
+        //
+        // 不能用 Scene 的 defaultLaunchBehavior(.suppressed)：实测 Scene body 比
+        // didFinishLaunching 早 0.2 s 求值，而「是不是登录项拉起的」只有到
+        // didFinishLaunching 才问得到（LoginItem 注释）；等 body 重新求值时主窗口
+        // 已经 visible 了。于是在这里直接 close——和用户手动关窗是同一条路（窗口
+        // 藏起来不销毁、降 accessory，见 LookupRuntime.installCloseWatcher），
+        // 同一轮 run loop 里关掉，屏幕上画不出来。状态恢复的窗口也在这之前
+        // 就已经回来了，一并关掉。
+        //
+        // 核对办法（不用真登出）：`open --env APHROS_LAUNCHED_AS_LOGIN_ITEM=1 <App>`
+        // 走同一条路；真正的 Apple Event 判定只有登出再登录才验得到。
+        if LoginItem.launchedAsLoginItem
+            || ProcessInfo.processInfo.environment["APHROS_LAUNCHED_AS_LOGIN_ITEM"] == "1" {
+            NSApp.setActivationPolicy(.accessory)
+            for window in NSApp.windows where !(window is NSPanel) && window.canBecomeMain {
+                window.close()
+            }
+        }
+        runtime.start(store: store, history: history)
+        Task { await store.load() }
     }
 }
 
@@ -151,18 +182,15 @@ private struct MacRootBootstrap: View {
 
     var body: some View {
         MacRootView(store: store, history: history, runtime: runtime)
-            // 窗口关了再开，task 会重跑——只在真没加载过时加载，
-            // 不然每次重开窗口都重建一遍索引。
-            .task { if case .loading = store.phase { await store.load() } }
-            .task {
-                runtime.start(store: store, history: history)
-                runtime.reopenMainWindow = { openWindow(id: "main") }
-            }
+            // 词典加载和 runtime.start 都在 AppDelegate 里做过了，这里只刷
+            // openWindow——窗口每次重建闭包都要换成活的。
+            .task { runtime.reopenMainWindow = { openWindow(id: "main") } }
     }
 }
 
 private struct MenuBarContent: View {
     @Bindable var runtime: LookupRuntime
+    let loginItem: LoginItem
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -172,6 +200,12 @@ private struct MenuBarContent: View {
             runtime.showMainWindow(.welcome)
         }
         Toggle("屏幕取词（⌥D）", isOn: $runtime.enabled)
+        // 勾的状态以系统为准（用户可能在系统设置里关了它），LoginItem 在每次
+        // 菜单弹出前自己刷；这里不挂 onAppear——它只在菜单第一次打开时来一次。
+        Toggle("开机自动启动", isOn: Binding(
+            get: { loginItem.isEnabled },
+            set: { loginItem.setEnabled($0) }
+        ))
         Divider()
         Button("退出 Aphros") { NSApp.terminate(nil) }
     }

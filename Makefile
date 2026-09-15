@@ -3,7 +3,11 @@
 # 实测：改内容不触发重拷，touch 一下才触发。所以 build 前无条件 touch 一遍。
 # 复现在 CLAUDE.md「已知的坑」里。
 .DEFAULT_GOAL := help
-SIM ?= iPhone 17 Pro
+# Xcode 27 自带的是 iOS 27 运行时，机型只有 iPhone 17 / 17e / 18 Pro / Air；
+# 「iPhone 17 Pro」只剩 26.5 那台。
+SIM ?= iPhone 17
+# 名字 → UDID 交给 scripts/sim-open.sh -n（同名机型跨运行时取版本最高的那台）。
+SIM_UDID = $(shell scripts/sim-open.sh -n "$(SIM)")
 # 默认只推正文。1.1 GB 的 oaldpe.1.mdd 等 M4 做发音时再推。
 SRC ?= dicts/oalecd_10_refined/oaldpe.mdx
 
@@ -29,12 +33,15 @@ build:  ## 编译 iOS App（模拟器，不需要签名）
 
 run:  ## 装到模拟器并启动
 	@$(MAKE) -s build
-	@xcrun simctl boot "$(SIM)" 2>/dev/null || true
-	@open -a Simulator
-	@xcrun simctl install booted "$$(xcodebuild -project Dict.xcodeproj -scheme Dict \
+	@# 启动 + 开窗（Xcode 27 是 Device Hub，≤26 是 Simulator.app）都在脚本里，
+	@# 为什么非得这么绕见脚本头部注释和 docs/xcode27-device-hub.md。
+	@udid=$$(scripts/sim-open.sh "$(SIM)") && \
+	xcrun simctl install "$$udid" "$$(xcodebuild -project Dict.xcodeproj -scheme Dict \
 		-destination 'platform=iOS Simulator,name=$(SIM)' -showBuildSettings 2>/dev/null | \
-		awk -F' = ' '/ BUILT_PRODUCTS_DIR/{d=$$2} / FULL_PRODUCT_NAME/{n=$$2} END{print d"/"n}')"
-	@xcrun simctl launch booted com.fx.dict
+		awk -F' = ' '/ BUILT_PRODUCTS_DIR/{d=$$2} / FULL_PRODUCT_NAME/{n=$$2} END{print d"/"n}')" && \
+	{ xcrun simctl terminate "$$udid" com.fx.dict 2>/dev/null || true; } && \
+	xcrun simctl launch "$$udid" com.fx.dict
+	@# terminate：已在跑的实例 launch 只会前台旧的（和 macOS 的 open 一个毛病），先杀再起。
 
 build-mac:  ## 编译 macOS App
 	@$(MAKE) -s project
@@ -89,11 +96,11 @@ device:  ## 装到连着线的真机并启动（UDID=<设备UDID>）
 	xcrun devicectl device process launch --device $(UDID) com.fx.dict
 
 sim-dicts:  ## 把 mdx 拷进模拟器沙盒（只拷 mdx，1.1 GB 的音频等 M4）
-	@xcrun simctl get_app_container "$(SIM)" com.fx.dict data >/dev/null 2>&1 || \
+	@xcrun simctl get_app_container "$(SIM_UDID)" com.fx.dict data >/dev/null 2>&1 || \
 		(echo "先 make run 装一次 App" && exit 1)
-	@mkdir -p "$$(xcrun simctl get_app_container "$(SIM)" com.fx.dict data)/Documents/dicts"
+	@mkdir -p "$$(xcrun simctl get_app_container "$(SIM_UDID)" com.fx.dict data)/Documents/dicts"
 	cp dicts/oalecd_10_refined/oaldpe.mdx \
-		"$$(xcrun simctl get_app_container "$(SIM)" com.fx.dict data)/Documents/dicts/"
+		"$$(xcrun simctl get_app_container "$(SIM_UDID)" com.fx.dict data)/Documents/dicts/"
 
 push-dicts:  ## 把词典推到真机（默认只推 113 MB 的 mdx；SRC= 可指定别的）
 	@test -n "$(UDID)" || (echo "用法: make push-dicts UDID=<设备UDID>  （xcrun devicectl list devices 可查）" && exit 1)

@@ -56,6 +56,28 @@ run-mac:  ## 编译并启动 macOS App（词典放 ~/Documents/Dict）
 	@open "$$(xcodebuild -project Dict.xcodeproj -scheme DictMac -showBuildSettings 2>/dev/null | \
 		awk -F' = ' '/ BUILT_PRODUCTS_DIR/{d=$$2} / FULL_PRODUCT_NAME/{n=$$2} END{print d"/"n}')"
 
+install-mac:  ## Release + Developer ID 签名，装到 /Applications 替换并重启（验划词 ⌥D 用）
+	@# 「辅助功能」授权认的是签名身份 + 路径：DerivedData 里的 Debug 构建按 ⌥D 只会
+	@# 弹隐私设置页。用 make dmg 同一张 Developer ID 证书签、装到同一路径，授权就在，
+	@# 划词能自己验（2026-09-16 用户拍板可以替换正式包）。不公证：本机构建没有
+	@# 隔离属性，Gatekeeper 不看。验完想回到公证版，重装 dist/ 里的 DMG 即可。
+	@$(MAKE) -s project
+	@touch App/Resources/*
+	xcodebuild -project Dict.xcodeproj -scheme DictMac -configuration Release \
+		-derivedDataPath DerivedData build | grep -E 'error:|BUILD (SUCCEEDED|FAILED)' || true
+	codesign --force --timestamp --options runtime \
+		--sign "$(SIGN_ID)" DerivedData/Build/Products/Release/Aphros.app
+	@# open 对已在跑的实例只是前台旧的（CLAUDE.md），先杀；杀完等一拍再拷，
+	@# 不然偶尔撞上正在退出的进程。
+	@pkill -x Aphros || true; sleep 1
+	rm -rf /Applications/Aphros.app
+	cp -R DerivedData/Build/Products/Release/Aphros.app /Applications/Aphros.app
+	@codesign --verify --deep --strict /Applications/Aphros.app && echo "签名校验通过"
+	open /Applications/Aphros.app
+	@sleep 3; echo "版本 $$(plutil -extract CFBundleShortVersionString raw /Applications/Aphros.app/Contents/Info.plist)" \
+		"· 进程 $$(pgrep -x Aphros) 启动于 $$(ps -o lstart= -p $$(pgrep -x Aphros))" \
+		"· 二进制 $$(stat -f %Sm /Applications/Aphros.app/Contents/MacOS/Aphros)"
+
 dmg:  ## 出 macOS 分发 DMG（Release + Developer ID 签名 + 公证；词典不进 DMG）
 	@$(MAKE) -s project
 	@touch App/Resources/*
@@ -111,4 +133,4 @@ push-dicts:  ## 把词典推到真机（默认只推 113 MB 的 mdx；SRC= 可�
 clean:  ## 清掉构建产物
 	rm -rf .build DerivedData Dict.xcodeproj
 
-.PHONY: help project test build run build-mac run-mac dmg device sim-dicts push-dicts clean
+.PHONY: help project test build run build-mac run-mac install-mac dmg device sim-dicts push-dicts clean

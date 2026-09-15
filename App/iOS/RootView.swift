@@ -36,6 +36,10 @@ struct RootView: View {
     @State private var pullback: CGFloat = 0
 
     @State private var showFavoritesOnly = false
+    /// 打开请求的代号。正文变换在后台（DictionaryStore.document 是 async），
+    /// 连点两个词时慢的那个可能后到——只认最新代号的结果，其余丢掉。
+    /// 打字开新搜索、滑出词条也各加一号，把路上的旧请求作废。
+    @State private var openRequest = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -89,9 +93,12 @@ struct RootView: View {
             // 在词条页上打字 = 开一轮新搜索：词条层滑走，让出结果页——无果时
             // 也让，底下现在有「没有找到单词」，不让的话反馈被词条盖着。
             // 按新 query 判断而不是候选：清空（✕ / 全删）不算开新搜索，词条留着。
-            if openedWord != nil, !new.trimmingCharacters(in: .whitespaces).isEmpty {
-                withAnimation(.entrySlide) { openedWord = nil }
-                pullback = 0
+            if !new.trimmingCharacters(in: .whitespaces).isEmpty {
+                openRequest += 1    // 路上还没回来的打开请求作废
+                if openedWord != nil {
+                    withAnimation(.entrySlide) { openedWord = nil }
+                    pullback = 0
+                }
             }
         }
     }
@@ -365,6 +372,7 @@ struct RootView: View {
     /// 词条层滑出去。动画收尾后才真正置空状态——期间 offset 的两个分支值相同，
     /// 切换不跳。回到结果页时把键盘还给搜索框（用户定的第 5 点）。
     private func closeEntry(width: CGFloat) {
+        openRequest += 1
         withAnimation(.entrySlide) {
             pullback = width + 24
         } completion: {
@@ -439,28 +447,36 @@ struct RootView: View {
     private func open(_ word: String) {
         // 「文本 → 词」的策略在 DictionaryStore.resolve(typed:)（规范词头：
         // Full 和 full 同一条记录——Mac 先改的，iOS 漏了一轮，2026-08-31 收编时补齐）。
-        guard let trimmed = store.resolve(typed: word),
-              let rendered = store.document(for: trimmed,
-                                            favorited: history.isFavorite(trimmed))
-        else { return }
+        guard let trimmed = store.resolve(typed: word) else { return }
         dismissKeyboard()
-        document = rendered
-        if openedWord == nil {
-            pullback = 0
-            // 历史上移**等词条层完全盖住列表再做**：点行的瞬间列表重排 + 词条
-            // 推入两个动画叠着跑，看着乱（用户报的）。推入动画收尾时列表在
-            // 词条层底下，重排既看不见也不进动画事务——右滑回来时已经排好了。
-            withAnimation(.entrySlide) {
+        openRequest += 1
+        let request = openRequest
+        Task {
+            // 变换在后台跑（有缓存时这里不挂起、当场回来），主线程照常吃点击
+            // 和动画。等文档到手再推入：推到一半换文档，WebView 会在动画里
+            // 重排闪一下。
+            guard let rendered = await store.document(for: trimmed,
+                                                      favorited: history.isFavorite(trimmed)),
+                  request == openRequest
+            else { return }
+            document = rendered
+            if openedWord == nil {
+                pullback = 0
+                // 历史上移**等词条层完全盖住列表再做**：点行的瞬间列表重排 + 词条
+                // 推入两个动画叠着跑，看着乱（用户报的）。推入动画收尾时列表在
+                // 词条层底下，重排既看不见也不进动画事务——右滑回来时已经排好了。
+                withAnimation(.entrySlide) {
+                    openedWord = trimmed
+                } completion: {
+                    history.recordOpen(trimmed, preview: store.preview(for: trimmed))
+                }
+            } else {
+                // 词条已开着还再开（比如词条页上直接按回车重查）：原地换文档，
+                // 列表本来就被盖着，立刻记。内链已去掉（2026-08-30），
+                // 这里不再是跳词入口。
                 openedWord = trimmed
-            } completion: {
                 history.recordOpen(trimmed, preview: store.preview(for: trimmed))
             }
-        } else {
-            // 词条已开着还再开（比如词条页上直接按回车重查）：原地换文档，
-            // 列表本来就被盖着，立刻记。内链已去掉（2026-08-30），
-            // 这里不再是跳词入口。
-            openedWord = trimmed
-            history.recordOpen(trimmed, preview: store.preview(for: trimmed))
         }
     }
 }

@@ -20,12 +20,6 @@ final class LookupPanelController {
     static let width: CGFloat = 380
     static let maxWebHeight: CGFloat = 420
     static let footerHeight: CGFloat = 28
-    /// WebView 和底栏分隔线之间的同色垫层。正文的底距不能写进 CSS：
-    /// panel 版心 padding-bottom 为 0 时末块边距整体塌出 body（实测只剩 2.4px），
-    /// 给 1px 就全弹回来（跳到 ~18px）——二选一都不是 14，缺口在面板层补齐，
-    /// 光学四边才能统一到 14（顶 14.1 / 右 14 / 底 2.4+12）。
-    static let webBottomInset: CGFloat = 12
-
     /// 底栏「在 Aphros 中打开」：把词交给 App 层（LookupRuntime.showMainWindow）。
     /// 浮窗不知道主窗口的生死，也不该知道。
     var openInMain: ((String) -> Void)?
@@ -91,7 +85,7 @@ final class LookupPanelController {
                 return
             }
             anchor = Self.anchor(for: capture.selectionBounds)
-            if let hit = lookup(capture.text) {
+            if let hit = await lookup(capture.text) {
                 model.message = nil
                 model.word = hit.word
                 history.recordOpen(hit.word, preview: store.preview(for: hit.word))
@@ -124,11 +118,11 @@ final class LookupPanelController {
 
     /// 「划中的文本 → 词」的策略（归一化、跟桥、规范词头）全在
     /// DictionaryStore.resolve(selection:)，这里只要文档、挂窄版心。
-    private func lookup(_ raw: String) -> (word: String, document: String)? {
+    private func lookup(_ raw: String) async -> (word: String, document: String)? {
         guard let word = store.resolve(selection: raw),
-              let document = store.document(for: word,
-                                            favorited: history.isFavorite(word),
-                                            panel: true)
+              let document = await store.document(for: word,
+                                                  favorited: history.isFavorite(word),
+                                                  panel: true)
         else { return nil }
         return (word, document)
     }
@@ -137,11 +131,15 @@ final class LookupPanelController {
 
     private func webViewDidLoad(_ webView: WKWebView) {
         guard !model.word.isEmpty else { return }
-        webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] value, _ in
+        // 量的是 html 不是 body：panel 版心 padding-bottom 为 0，末块的底边距整个
+        // 塌到 body 外面（glean 实测 body 197 / html 212.42），按 body 定高 WebView
+        // 就比文档矮 15px，装得下的词条也能滚一小段、还带滑块（2026-09-16
+        // 用户报）。量矩形不量 scrollHeight（后者四舍五入，212.42 报 212），
+        // 再向上取整——差 0.4px 也是「可滚」。
+        webView.evaluateJavaScript("document.documentElement.getBoundingClientRect().height") { [weak self] value, _ in
             guard let self else { return }
-            let contentHeight = (value as? Double).map { CGFloat($0) } ?? Self.maxWebHeight
-            let height = min(contentHeight, Self.maxWebHeight)
-                         + Self.webBottomInset + Self.footerHeight
+            let contentHeight = (value as? Double).map { ceil(CGFloat($0)) } ?? Self.maxWebHeight
+            let height = min(contentHeight, Self.maxWebHeight) + Self.footerHeight
             measuredWebHeight = height
             present(height: height)
         }
@@ -283,11 +281,12 @@ private struct LookupPanelView: View {
             // WebView 常驻不摘（主窗口同一策略）：if/else 切换会把 WKWebView
             // 连进程带状态整个重建，未命中一次、下次命中就要重付冷启动。
             // 提示态只是把它藏在提示后面。
+            // 底部不另垫：末块塌出 body 的那 15px 边距已经算在 WebView 高度里
+            //（webViewDidLoad），光学四边仍在 14 上下。
             MacEntryWebView(html: model.html,
                             onPlaySound: onPlaySound,
                             onToggleFavorite: onToggleFavorite,
                             onDidFinish: onLoaded)
-                .padding(.bottom, LookupPanelController.webBottomInset)
                 .opacity(model.message == nil ? 1 : 0)
                 .overlay {
                     if let message = model.message {
@@ -298,8 +297,9 @@ private struct LookupPanelView: View {
                             .padding(.horizontal, 14)
                     }
                 }
-            Divider()
-            footer
+            // 分隔线叠在底栏顶上、不占布局高度：面板高 = 正文高 + footerHeight，
+            // 少算这 1pt 正文就矮 1pt，照样可滚（实测过）。
+            footer.overlay(alignment: .top) { Divider() }
         }
         .frame(width: LookupPanelController.width, height: model.height)
         .background(Color.page)

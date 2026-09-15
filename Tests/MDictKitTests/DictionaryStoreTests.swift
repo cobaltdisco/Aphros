@@ -16,8 +16,14 @@ struct DictionaryStoreTests {
         FileManager.default.fileExists(atPath: dictionaries.appending(path: "oaldpe.mdx").path)
     }
 
+    /// 缓存目录独立于 App 的（DictionaryStore.indexCacheDirectory 注释）；
+    /// 跨测试复用同一个，整组只重建一次索引。
+    nonisolated static let indexCache = FileManager.default.temporaryDirectory
+        .appending(path: "dict-tests-index-cache")
+
     private func loadedStore() async throws -> DictionaryStore {
-        let store = DictionaryStore(dictionariesRoot: Self.dictionaries)
+        let store = DictionaryStore(dictionariesRoot: Self.dictionaries,
+                                    indexCacheDirectory: Self.indexCache)
         await store.load()
         guard case .ready = store.phase else { throw NotReady(phase: String(describing: store.phase)) }
         return store
@@ -47,12 +53,12 @@ struct DictionaryStoreTests {
     @Test(.enabled(if: hasDictionary, "本地没有 dicts/，跳过"))
     func 浮窗版式的根类() async throws {
         let store = try await loadedStore()
-        let glean = try #require(store.document(for: "glean", panel: true))
+        let glean = try #require(await store.document(for: "glean", panel: true))
         #expect(glean.contains(" panel"))
         #expect(!glean.contains(" n2"))          // 单义项：号列不放宽
-        let run = try #require(store.document(for: "run", panel: true))
+        let run = try #require(await store.document(for: "run", panel: true))
         #expect(run.contains(" n2"))             // 63 个义项：两位数号列
-        let window = try #require(store.document(for: "glean"))
+        let window = try #require(await store.document(for: "glean"))
         #expect(!window.contains(" panel"))      // 主窗口不带浮窗类
     }
 
@@ -60,17 +66,17 @@ struct DictionaryStoreTests {
     func 空壳动词接进短语动词释义() async throws {
         let store = try await loadedStore()
         // regale 主词条没有义项，释义在 regale with 里（2026-09-06 用户报「没有释义」）
-        let regale = try #require(store.document(for: "regale"))
+        let regale = try #require(await store.document(for: "regale"))
         #expect(regale.contains("to entertain somebody with stories, jokes, etc."))
         #expect(regale.contains("regale somebody with something"))
         // fend 挂着两个短语动词，两块都要接进来
-        let fend = try #require(store.document(for: "fend"))
+        let fend = try #require(await store.document(for: "fend"))
         #expect(fend.contains("fend for yourself"))
         #expect(fend.contains("to defend or protect yourself from something/somebody"))
         // 空壳不是桥：浮窗停在 regale 上看接进来的正文，不跳走
         #expect(store.resolve(selection: "regale") == "regale")
         // 有义项的词条链接表照旧不接：run 的正文里不该多出 pv-g 块
-        let run = try #require(store.document(for: "run"))
+        let run = try #require(await store.document(for: "run"))
         #expect(!run.contains(#"class="pv-g""#))
     }
 

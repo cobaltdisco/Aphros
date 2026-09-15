@@ -35,9 +35,15 @@ public final class DictionaryStore {
 
     /// 词典根目录。默认是双端约定的落点（AppPaths）；测试注入仓库里的 dicts/。
     private let dictionariesRoot: URL
+    /// 索引缓存目录。**测试必须注入自己的**（2026-09-16）：缓存按源文件名落盘、
+    /// 指纹以后写者为准，测试拿仓库的 dicts/ 跑一遍就把 App 自己那份
+    ///（~/Documents/Dict 的指纹）覆盖掉，下次启动白重建一次索引。
+    private let indexCacheDirectory: URL
 
-    public init(dictionariesRoot: URL = .dictionariesRoot) {
+    public init(dictionariesRoot: URL = .dictionariesRoot,
+                indexCacheDirectory: URL = .dictSupportDirectory.appending(path: "index-cache")) {
         self.dictionariesRoot = dictionariesRoot
+        self.indexCacheDirectory = indexCacheDirectory
     }
 
     // MARK: 加载
@@ -54,14 +60,14 @@ public final class DictionaryStore {
             let clock = ContinuousClock()
             // 46 万词头解压 + 排序，主线程干这个会卡住启动动画。
             let mdds = Self.findMDDs(besides: mdx)
+            let cacheDirectory = indexCacheDirectory
             let built = try await Task.detached(priority: .userInitiated) {
                 // 索引缓存（ADR 0008 附记，2026-08-25 拍板落地）：命中就跳过
                 // 键区块解压和全量排序；源文件换了指纹（大小 + 修改时间）对不上，
                 // **自动**重建并重写缓存，用户不需要做任何事，只是那一次启动慢。
                 // 每部（mdx + 各 mdd）一个缓存文件，跟着源文件名走。
                 func cachedTable(for source: URL) throws -> (table: KeyTable, hit: Bool) {
-                    let cacheURL = URL.dictSupportDirectory
-                        .appending(path: "index-cache/\(source.lastPathComponent).didx")
+                    let cacheURL = cacheDirectory.appending(path: "\(source.lastPathComponent).didx")
                     if let cached = IndexCache.load(source: source, from: cacheURL) {
                         return (cached, true)
                     }
@@ -153,17 +159,24 @@ public final class DictionaryStore {
 
     /// 查到的正文，已经变换 + 包成完整文档。同名词头有多条时全部拼在一页里。
     /// `favorited` 变成根元素上的 `faved` 类——词头行那颗星是实心还是空心。
-    public func document(for query: String, favorited: Bool = false, panel: Bool = false) -> String? {
+    ///
+    /// **冷路径在后台线程变换**（2026-09-16）：大词条一遍变换 30–60 ms（Release、
+    /// 模拟器实测 light 62 / take 51 / run 45），以前顶在主线程上，点按到动画
+    /// 起步之间整个界面是冻住的。引擎读记录走只读内存映射 + 带锁的区块缓存，
+    /// 后台查、主线程同时取预览是安全的。缓存命中时没有挂起点，同步返回。
+    /// 调用方要自己防先发后至：连开两个词，慢的那个后到不能盖掉快的。
+    public func document(for query: String, favorited: Bool = false, panel: Bool = false) async -> String? {
         let body: String
         if let cached = bodyCache[query] {
             body = cached
         } else {
-            guard let table, let matches = try? table.lookup(query), !matches.isEmpty
-            else { return nil }
-            body = matches
-                .map { EntryRenderer.transform(graftingPhrasalVerbs(into: $0.html, table: table)) }
-                .map { resources.isEmpty ? $0 : EntryRenderer.markMissingAudio($0) { resources.contains($0) } }
-                .joined()
+            guard let table else { return nil }
+            let resources = resources
+            let rendered = await Task.detached(priority: .userInitiated) {
+                Self.renderBody(for: query, table: table, resources: resources)
+            }.value
+            guard let rendered else { return nil }
+            body = rendered
             bodyCache[query] = body
             bodyCacheOrder.append(query)
             if bodyCacheOrder.count > 16 {
@@ -181,10 +194,21 @@ public final class DictionaryStore {
         return EntryRenderer.document(preTransformedBody: body, extraRootClasses: classes)
     }
 
+    /// 查记录 + 变换 + 标缺失音频，纯函数：只碰 Sendable 的表和资源库，
+    /// 在后台线程跑。查不到返回 nil。
+    nonisolated private static func renderBody(for query: String, table: KeyTable,
+                                               resources: ResourceLibrary) -> String? {
+        guard let matches = try? table.lookup(query), !matches.isEmpty else { return nil }
+        return matches
+            .map { EntryRenderer.transform(graftingPhrasalVerbs(into: $0.html, table: table)) }
+            .map { resources.isEmpty ? $0 : EntryRenderer.markMissingAudio($0) { resources.contains($0) } }
+            .joined()
+    }
+
     /// 空壳主词条（regale：没有义项、只有一张被 25 号藏掉的短语动词链接表）
     /// 把链接指向的 `regale with` 条目正文接进来——第 8 版对这批词就是这么排的，
     /// 释义本来就在现用词典里，只是隔了一次点击。全库 41 个，见 PhrasalVerbGraft。
-    private func graftingPhrasalVerbs(into html: String, table: KeyTable) -> String {
+    nonisolated private static func graftingPhrasalVerbs(into html: String, table: KeyTable) -> String {
         let targets = EntryRenderer.phrasalVerbGrafts(for: html)
         guard !targets.isEmpty else { return html }
         let records = targets.compactMap { try? table.lookup($0).first?.html }
@@ -210,9 +234,9 @@ public final class DictionaryStore {
     }
 
     /// 变换后的正文缓存。同一个词再点开（历史页、词条里内链跳走又跳回）不付
-    /// 第二遍变换的钱——大词条一遍 70–100 ms（实测 light / go，模拟器），
-    /// 而且是在主线程上、顶着点按动画的起步。存**正文**不存整份文档：收藏态
-    /// 是文档外壳上的根类，进了键的话收藏一下缓存就全废。
+    /// 第二遍变换的钱，也不用等后台那一趟——命中时 `document(for:)` 同步返回。
+    /// 存**正文**不存整份文档：收藏态是文档外壳上的根类，进了键的话收藏一下
+    /// 缓存就全废。
     /// 16 份按最大词条算 ~3 MB，FIFO 淘汰就够，不值得上 LRU。
     private var bodyCache: [String: String] = [:]
     private var bodyCacheOrder: [String] = []

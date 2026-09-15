@@ -133,6 +133,9 @@ final class LookupRuntime {
         // 但已弃用）。推迟一轮让策略切换先落地。
         DispatchQueue.main.async {
             if let front = NSWorkspace.shared.frontmostApplication {
+                // SDK 把 activateIgnoringOtherApps 标成「macOS 14 起无效」，编译有一条
+                // 弃用警告。**无视它**：ADR 0013 五种写法逐个量过，只有这个组合
+                // 能把窗口带到前台，去掉这个选项就回到压在别的 App 后面。
                 NSRunningApplication.current.activate(from: front, options: [.activateIgnoringOtherApps])
             } else {
                 NSApp.activate()
@@ -156,9 +159,13 @@ final class LookupRuntime {
     private func installCloseWatcher() {
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main
-        ) { notification in
-            guard let window = notification.object as? NSWindow,
-                  !(window is NSPanel), window.canBecomeMain else { return }
+        ) { _ in
+            // 不看关的是哪扇窗：闭包是 Sendable，非 Sendable 的 notification 带不进
+            // 主线程区域（Swift 6.4 起读 window.canBecomeMain 报警告，assumeIsolated
+            // 包整段则直接报错）。反正下一轮重数一遍主窗口就是答案；浮窗是
+            // NSPanel、只 orderOut 不 close，本来就不会走到这里。
+            // macOS 27 有类型化的 NSWindow.willClose（回调自带 @MainActor），
+            // 最低版本升到 27 时换它。
             DispatchQueue.main.async {
                 let mainWindowsLeft = NSApp.windows.contains {
                     $0.isVisible && !($0 is NSPanel) && $0.canBecomeMain

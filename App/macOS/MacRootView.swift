@@ -34,6 +34,8 @@ struct MacRootView: View {
     /// 浮窗带词进来时要选中的词。搜索框一换内容 onChange 就把选中清掉
     ///（打字时该这样），所以「进来即选中」得等那一步跑完再落，见 onChange(query)。
     @State private var selectAfterQueryChange: String?
+    /// 打开请求的代号：正文变换在后台，↑↓ 快扫时只认最新一个词的结果。
+    @State private var openRequest = 0
 
     var body: some View {
         NavigationSplitView {
@@ -123,6 +125,7 @@ struct MacRootView: View {
     /// 回到刚启动的样子：空搜索框、欢迎页、历史列表（不筛收藏）滚回最新一条。
     /// 关窗只是隐藏不销毁，不主动清这些状态就还是关窗前那一刻。
     private func showWelcome() {
+        openRequest += 1    // 路上的打开请求作废，别把欢迎页又盖回词条
         query = ""
         suggestions = []
         selection = nil
@@ -443,14 +446,12 @@ struct MacRootView: View {
         guard query.isEmpty, let word = selection,
               let index = listItems.firstIndex(where: { $0.word == word })
         else { return false }
-        // 下一行的词条**先**开出来再放动画：变换要 70–100 ms 且在主线程
-        //（DictionaryStore.bodyCache 的注释），跟着 selection 的 onChange
-        // 落在动画中段就是肉眼可见的掉帧（用户报的）。先开一遍热进缓存，
-        // onChange 那一遍就只剩包壳的钱。
+        // 下一行由 selection 的 onChange 打开。变换在后台跑（2026-09-16），
+        // 不再需要「先开出来热缓存再放动画」的手法——那是它还顶在主线程、
+        // 落在动画中段掉帧时的补丁。
         var remaining = listItems.map(\.word)
         remaining.remove(at: index)
         let next = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)]
-        if let next { open(next, record: false) }
         withAnimation(.snappy) {
             history.remove(word)
         }
@@ -475,13 +476,19 @@ struct MacRootView: View {
     private func open(_ word: String, record: Bool) -> Bool {
         // 「文本 → 词」的策略（规范词头等）在 DictionaryStore.resolve(typed:)，
         // 这里只要文档；记不记历史是界面的事，留在下面。
-        guard let canonical = store.resolve(typed: word),
-              let rendered = store.document(for: canonical,
-                                            favorited: history.isFavorite(canonical))
-        else { return false }
-        document = rendered
-        openedWord = canonical
-        if record { history.recordOpen(canonical, preview: store.preview(for: canonical)) }
+        // 返回值只说「这个词有没有」——文档本身在后台变换，到了再换。
+        guard let canonical = store.resolve(typed: word) else { return false }
+        openRequest += 1
+        let request = openRequest
+        Task {
+            guard let rendered = await store.document(for: canonical,
+                                                      favorited: history.isFavorite(canonical)),
+                  request == openRequest
+            else { return }
+            document = rendered
+            openedWord = canonical
+            if record { history.recordOpen(canonical, preview: store.preview(for: canonical)) }
+        }
         return true
     }
 }

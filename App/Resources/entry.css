@@ -17,8 +17,16 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --f-sans:  "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "PingFang SC", sans-serif;
-  --f-serif: "New York", ui-serif, Georgia, "Times New Roman", serif;
+  /* 系统字体只走关键字，不按名字点（"SF Pro Text" / "New York"）。按名字点，
+     WebKit 用的是**用户装在 /Library/Fonts 的**同名字体文件，不是系统内建那份；
+     那份文件在 App 开着的时候被换掉（装 / 更新 Apple 开发者网站的 SF Pro 字体包），
+     进程里缓存的字形编号就和新文件对不上——字符是对的，画出来的字形全错位
+     （例句和音标成乱码、义项号 1 2 变 9 0、半角逗号变引号；2026-09-19 实拍：
+     字体包 09-18 落盘，进程 09-16 起的，重启进程即好）。关键字指向系统内建字体，
+     不受用户装字体影响。没装字体包的机器和 iOS 上这两个名字本来就匹配不到，
+     一直落在关键字上，去掉名字对它们零变化。 */
+  --f-sans:  -apple-system, BlinkMacSystemFont, system-ui, "PingFang SC", sans-serif;
+  --f-serif: ui-serif, Georgia, "Times New Roman", serif;
 
   /* 墨阶。iOS 原生系（2026-08-30 定稿，三方向里用户拍板的方向一）：
      纯白底 + 纯黑主墨 + 中性灰阶，和系统 App 同一质感。
